@@ -14,7 +14,8 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 KERNEL=${KERNEL:-/boot/vmlinuz-linux}
-WORK=${WORK:-$(mktemp -d /var/tmp/rufux-vmtest.XXXXXX)}
+# Must be visible inside the VM: virtme-ng shows the host /tmp but a fresh tmpfs on /var/tmp.
+WORK=${WORK:-$(mktemp -d /tmp/rufux-vmtest.XXXXXX)}
 [ "$(id -u)" -eq 0 ] || { echo "Please run as root"; exit 1; }
 [ -f "$KERNEL" ] || { echo "Kernel $KERNEL not found (set KERNEL=...)"; exit 1; }
 echo "Work directory: $WORK"
