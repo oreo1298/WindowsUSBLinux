@@ -1,0 +1,13 @@
+#!/usr/bin/python3 -I
+"""Rufux privileged helper launcher (run through pkexec by the GUI)."""
+import os
+import sys
+
+# The package lives next to this script's parent directory, both in the source
+# tree (bin/..) and when installed (/usr/lib/rufux/bin/..).
+_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, _root)
+
+from rufux.helper.main import main  # noqa: E402
+
+sys.exit(main())

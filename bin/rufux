@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Rufux launcher for running from the source tree or an installed prefix."""
+import os
+import sys
+
+_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if os.path.isfile(os.path.join(_root, "rufux", "__init__.py")):
+    sys.path.insert(0, _root)
+
+from rufux.app import main  # noqa: E402
+
+sys.exit(main())
