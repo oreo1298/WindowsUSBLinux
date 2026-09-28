@@ -108,8 +108,9 @@ policy, the prompt shows the helper's full path instead of a friendly message.
   split into `install.swm` + `install2.swm`… (Windows Setup supports this natively). If
   `wimlib` is missing, or the image uses a solid-compressed `install.esd` larger than 4 GB,
   pick **NTFS** instead.
-- **NTFS/exFAT** drives boot through UEFI:NTFS. If a PC refuses to boot one with Secure Boot on,
-  use FAT32 or temporarily disable Secure Boot.
+- **NTFS/exFAT** drives boot through UEFI:NTFS. Its loader and file system drivers are signed, so
+  they also start with Secure Boot enabled. If a particular PC still refuses the drive, use FAT32
+  or temporarily disable Secure Boot.
 - For old BIOS-only PCs, choose **MBR** and **BIOS or UEFI** (needs `grub`).
 - The customization options are written to `autounattend.xml` at the root of the drive. If you
   only chose options that apply after installation, they go to

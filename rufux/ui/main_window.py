@@ -526,8 +526,6 @@ class MainWindow(QMainWindow):
         if self.persist_slider.value() != gb:
             self.persist_slider.setValue(gb)
         self.sel.persistence_size = gb * GiB
-        if not self._updating:
-            self.refresh_options()
 
     def refresh_options(self) -> None:
         if self._updating:
@@ -677,6 +675,13 @@ class MainWindow(QMainWindow):
         sel = self.sel
         if sel.drive is None:
             QMessageBox.warning(self, APP_NAME, "Please select a device.")
+            return
+        # Report blocking problems before asking anything else.
+        sel.uefi_ntfs = "(to be located)" if plan.needs_uefi_ntfs(sel) else None
+        try:
+            plan.validate(sel, self.tools)
+        except PlanError as exc:
+            QMessageBox.critical(self, APP_NAME, str(exc))
             return
         if plan.needs_uefi_ntfs(sel):
             path = uefintfs.find() or self._download_uefi_ntfs()
