@@ -7,14 +7,10 @@ import errno
 import fcntl
 import mmap
 import os
-import struct
 import time
 
 BLKRRPART = 0x125F
 BLKFLSBUF = 0x1261
-BLKGETSIZE64 = 0x80081272
-BLKSSZGET = 0x1268
-BLKDISCARD = 0x1277
 
 ALIGN = 4096
 
@@ -37,24 +33,6 @@ def open_device(path: str, write: bool, direct: bool = True, exclusive: bool = T
             if exc.errno != errno.EINVAL:
                 raise
     return os.open(path, flags), False
-
-
-def device_size(fd: int) -> int:
-    buf = bytearray(8)
-    try:
-        fcntl.ioctl(fd, BLKGETSIZE64, buf)
-        return struct.unpack("<Q", buf)[0]
-    except OSError:
-        return os.lseek(fd, 0, os.SEEK_END)
-
-
-def sector_size(fd: int) -> int:
-    buf = bytearray(4)
-    try:
-        fcntl.ioctl(fd, BLKSSZGET, buf)
-        return struct.unpack("<i", buf)[0] or 512
-    except OSError:
-        return 512
 
 
 def flush_buffers(fd: int) -> None:
@@ -123,13 +101,3 @@ def zero_range(fd: int, offset: int, length: int, direct: bool,
         os.fsync(fd)
     finally:
         buf.close()
-
-
-def write_small(path: str, offset: int, data: bytes) -> None:
-    """Buffered write of a small region, followed by fsync."""
-    fd = os.open(path, os.O_WRONLY | os.O_CLOEXEC)
-    try:
-        pwrite_all(fd, data, offset)
-        os.fsync(fd)
-    finally:
-        os.close(fd)

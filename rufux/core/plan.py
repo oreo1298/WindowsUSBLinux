@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from .. import HELPER_PROTOCOL
 from .blockdevs import Drive, image_on_drive
 from .fsdefs import FILESYSTEMS, ORDER, cluster_sizes, sanitize_label
-from .image import FAT32_MAX_FILE, ImageInfo
+from .image import ImageInfo
 from .unattend import RegionalSettings, WueOptions, build_unattend
 from .util import GiB, MiB, human_size, which
 
@@ -342,9 +342,3 @@ def summary(sel: Selection, tools: Tools) -> list[str]:
     if sel.badblocks:
         out.append(f"Bad blocks check: {sel.badblocks} pass(es)")
     return out
-
-
-def fat32_note(info: ImageInfo | None) -> str:
-    if info and info.largest_size > FAT32_MAX_FILE:
-        return f"Largest file: {info.largest_file} ({human_size(info.largest_size)})"
-    return ""

@@ -15,7 +15,7 @@ import shutil
 import struct
 import subprocess
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from .isofs import ImageFS, IsoError
 from .wim import WimError, WimInfo, read_wim_info
@@ -166,9 +166,6 @@ class ImageInfo:
         if self.kind == "fsimage":
             return "File system image"
         return "Unknown image"
-
-    def to_dict(self) -> dict:
-        return asdict(self)
 
 
 # ---------------------------------------------------------------------------

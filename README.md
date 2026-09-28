@@ -165,6 +165,17 @@ make test         # unit tests; the end-to-end tests also need root and loop dev
 sudo make test    # runs everything, including real partition/format/copy tests on loop devices
 ```
 
+`tests/vm/run.sh` is an optional full-system test. It starts your own system in a VM (with
+[virtme-ng](https://github.com/arighi/virtme-ng)) with 8 virtual USB sticks attached. It runs
+the helper against them with the real kernel file system drivers, then boots each resulting stick
+in QEMU with UEFI (OVMF) and legacy BIOS to check that the expected boot loader really starts.
+This covers Windows FAT32/NTFS/exFAT, GPT/MBR, UEFI:NTFS and BIOS boot through GRUB, hybrid DD
+images, and Linux ISO mode with label patching:
+
+```bash
+sudo KERNEL=/boot/vmlinuz-linux tests/vm/run.sh
+```
+
 Code layout:
 
 - `rufux/core/`: Qt-free logic. The image reader (`isofs.py`), image analysis (`image.py`),

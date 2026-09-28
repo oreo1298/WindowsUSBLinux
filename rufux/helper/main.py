@@ -207,10 +207,10 @@ def do_save(ctx: Context, job: dict) -> str:
     out = _check_str(job, "output")
     if not os.path.isabs(out):
         raise HelperError("Invalid output path")
+    if blockdevs.image_on_drive(os.path.dirname(out), target.drive):
+        raise HelperError("Cannot save the drive onto itself")
     out_fd = ctx.open_user_file(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     try:
-        if blockdevs.image_on_drive(out, target.drive):
-            raise HelperError("Cannot save the drive onto itself")
         target.unmount_all()
         ctx.status(f"Saving {target.path} to {out}...")
         save_drive(ctx, target.path, target.size, out_fd)

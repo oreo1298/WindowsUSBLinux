@@ -179,7 +179,3 @@ def _truncate_utf16(text: str, units: int) -> str:
             break
         out += ch
     return out
-
-
-def available_filesystems() -> dict[str, bool]:
-    return {fs: FILESYSTEMS[fs].available for fs in ORDER}

@@ -15,7 +15,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Callable, Iterable
+from typing import Callable
 
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 RUN_DIR = "/run/rufux"
@@ -285,8 +285,3 @@ def syncfs(path_or_fd) -> None:
         if fd is not None:
             os.close(fd)
     os.sync()
-
-
-def iter_lines_limited(lines: Iterable[str], limit: int = 40) -> list[str]:
-    out = list(lines)
-    return out[-limit:]
