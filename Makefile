@@ -47,6 +47,7 @@ uninstall:
 		"$(DESTDIR)$(DATADIR)/metainfo/$(APP_ID).metainfo.xml" \
 		"$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/$(APP_ID).svg" \
 		"$(DESTDIR)$(DATADIR)/licenses/rufux/LICENSE"
+	-rmdir "$(DESTDIR)$(DATADIR)/licenses/rufux" 2>/dev/null
 
 test check:
 	$(PYTHON) -m pytest -q tests
