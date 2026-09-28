@@ -6,6 +6,7 @@ import argparse
 import os
 import signal
 import sys
+import traceback
 
 from . import APP_ID, APP_NAME, __version__
 
@@ -17,14 +18,21 @@ def main(argv: list[str] | None = None) -> int:
     args, qt_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     try:
-        from PySide6.QtCore import QCoreApplication
-        from PySide6.QtWidgets import QApplication
+        from .ui.qt import QApplication, QCoreApplication
     except ImportError as exc:
-        print(f"{APP_NAME} needs PySide6 (sudo pacman -S pyside6): {exc}", file=sys.stderr)
+        from .core.distro import install_hint
+
+        print(f"{APP_NAME} needs PyQt6 or PySide6 ({install_hint('qt')}): {exc}", file=sys.stderr)
         return 1
 
     from .ui.main_window import MainWindow
     from .ui.widgets import app_icon
+
+    def excepthook(exc_type, exc, tb) -> None:
+        # Report instead of aborting (PyQt6 aborts on unhandled exceptions in slots).
+        traceback.print_exception(exc_type, exc, tb)
+
+    sys.excepthook = excepthook
 
     QCoreApplication.setOrganizationName("rufux")
     QCoreApplication.setApplicationName("rufux")

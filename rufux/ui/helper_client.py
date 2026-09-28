@@ -7,7 +7,8 @@ import os
 import shutil
 import sys
 
-from PySide6.QtCore import QObject, QProcess, Signal
+from ..core.distro import install_hint
+from .qt import QObject, QProcess, Signal
 
 PACKAGE_PARENT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,7 +27,7 @@ def helper_command() -> tuple[str, list[str]]:
     pkexec = shutil.which("pkexec")
     if pkexec is None:
         raise RuntimeError("pkexec (polkit) is required to write to drives. "
-                           "Install it with: sudo pacman -S polkit")
+                           f"Install it with: {install_hint('polkit')}")
     if not os.access(helper, os.X_OK):
         raise RuntimeError(f"The helper program is missing or not executable: {helper}")
     return pkexec, [helper]
@@ -47,7 +48,7 @@ class HelperClient(QObject):
 
     @property
     def running(self) -> bool:
-        return self.proc is not None and self.proc.state() != QProcess.NotRunning
+        return self.proc is not None and self.proc.state() != QProcess.ProcessState.NotRunning
 
     def start(self, job: dict) -> None:
         program, args = helper_command()
@@ -55,7 +56,7 @@ class HelperClient(QObject):
         self._done = False
         self._authorized = False
         self.proc = QProcess(self)
-        self.proc.setProcessChannelMode(QProcess.SeparateChannels)
+        self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self.proc.readyReadStandardOutput.connect(self._on_stdout)
         self.proc.readyReadStandardError.connect(self._on_stderr)
         self.proc.finished.connect(self._on_finished)
@@ -72,7 +73,7 @@ class HelperClient(QObject):
 
     def _on_stdout(self) -> None:
         assert self.proc is not None
-        self._buf += bytes(self.proc.readAllStandardOutput())
+        self._buf += self.proc.readAllStandardOutput().data()
         while b"\n" in self._buf:
             line, self._buf = self._buf.split(b"\n", 1)
             if not line.strip():
@@ -102,7 +103,7 @@ class HelperClient(QObject):
 
     def _on_stderr(self) -> None:
         assert self.proc is not None
-        text = bytes(self.proc.readAllStandardError()).decode("utf-8", "replace")
+        text = self.proc.readAllStandardError().data().decode("utf-8", "replace")
         for line in text.splitlines():
             if line.strip():
                 self.log.emit("[helper] " + line)
@@ -119,6 +120,6 @@ class HelperClient(QObject):
         self.finished.emit(False, False, f"The helper exited unexpectedly (exit code {code}). See the log.")
 
     def _on_error(self, error) -> None:
-        if error == QProcess.FailedToStart and not self._done:
+        if error == QProcess.ProcessError.FailedToStart and not self._done:
             self._done = True
             self.finished.emit(False, False, "Could not start the privileged helper (is pkexec installed?)")

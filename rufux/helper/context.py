@@ -17,6 +17,8 @@ import threading
 import time
 from typing import Callable
 
+from ..core.distro import install_hint
+
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 RUN_DIR = "/run/rufux"
 
@@ -131,7 +133,7 @@ class Context:
             path = shutil.which(n, path=SAFE_PATH)
             if path:
                 return path
-        hint = f" (install it with: sudo pacman -S {package})" if package else ""
+        hint = f" ({install_hint(package)})" if package else ""
         raise HelperError(f"Required program '{names[0]}' was not found{hint}")
 
     def run(self, cmd: list[str], *, input: bytes | str | None = None, check: bool = True,

@@ -2,8 +2,9 @@
 
 UEFI firmware can only read FAT.  To boot an NTFS/exFAT drive, Rufus adds a
 tiny FAT partition containing UEFI:NTFS, which loads an NTFS/exFAT driver and
-chainloads the real boot loader.  The Arch package ships the image; otherwise
-it can be downloaded once (pinned to a Rufus release and verified by hash).
+chainloads the real boot loader.  Installs can bundle the image (see the
+Makefile's UEFI_NTFS option); otherwise it is downloaded once, pinned to a
+Rufus release and verified by hash.
 """
 
 from __future__ import annotations

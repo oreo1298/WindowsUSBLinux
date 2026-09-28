@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 
 from ..core.image import FAT32_MAX_FILE
 from ..core.isofs import Entry, ImageFS, IsoError
-from ..core.util import human_size
+from ..core.distro import install_hint
+from ..core.util import GRUB_I386_DIRS, human_size
 from .context import Context, HelperError, syncfs
 from .formatting import mounted
 
@@ -349,8 +350,8 @@ def _bypass_appraiser(ctx: Context, mnt: str, hashes: dict[str, str]) -> None:
 
 def install_grub_bios(ctx: Context, disk_dev: str, mnt: str, fs: str) -> None:
     grub_install = ctx.tool("grub-install", "grub2-install", package="grub")
-    if not any(os.path.isdir(d) for d in ("/usr/lib/grub/i386-pc", "/usr/lib/grub2/i386-pc")):
-        raise HelperError("GRUB for BIOS (i386-pc) is not installed (sudo pacman -S grub)")
+    if not any(os.path.isdir(d) for d in GRUB_I386_DIRS):
+        raise HelperError(f"GRUB for BIOS (i386-pc) is not installed ({install_hint('grub')})")
     ctx.status("Installing GRUB for legacy BIOS boot...")
     fsmod = {"ntfs": "ntfs", "exfat": "exfat", "fat32": "fat", "fat16": "fat"}.get(fs, "fat")
     boot_dir = os.path.join(mnt, "boot")

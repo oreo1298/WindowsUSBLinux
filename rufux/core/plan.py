@@ -7,10 +7,11 @@ from dataclasses import dataclass, field
 
 from .. import HELPER_PROTOCOL
 from .blockdevs import Drive, image_on_drive
+from .distro import install_hint, package_names
 from .fsdefs import FILESYSTEMS, ORDER, cluster_sizes, sanitize_label
 from .image import ImageInfo
 from .unattend import RegionalSettings, WueOptions, build_unattend
-from .util import GiB, MiB, human_size, which
+from .util import GiB, MiB, grub_bios_available, human_size, which
 
 BOOT_IMAGE = "image"
 BOOT_NONE = "nonboot"
@@ -39,9 +40,7 @@ class Tools:
 
     @classmethod
     def detect(cls) -> "Tools":
-        grub = which("grub-install", "grub2-install") is not None and any(
-            os.path.isdir(d) for d in ("/usr/lib/grub/i386-pc", "/usr/lib/grub2/i386-pc"))
-        return cls(wimlib=which("wimlib-imagex") is not None, grub_bios=grub,
+        return cls(wimlib=which("wimlib-imagex") is not None, grub_bios=grub_bios_available(),
                    fs={fs: FILESYSTEMS[fs].available for fs in ORDER})
 
 
@@ -243,14 +242,14 @@ def validate(sel: Selection, tools: Tools) -> list[str]:
                 if not will_split_wim(sel, tools):
                     if splittable_wim(info) and not tools.wimlib:
                         raise PlanError("This image contains a file larger than 4 GB (install.wim), which "
-                                        "FAT32 cannot store. Install 'wimlib' (sudo pacman -S wimlib) so it "
-                                        "can be split, or select NTFS.")
+                                        "FAT32 cannot store. Install wimlib so it can be split "
+                                        f"({install_hint('wimlib')}), or select NTFS.")
                     raise PlanError(f"This image contains a file larger than 4 GB ({info.largest_file}), "
                                     "which is more than FAT32 allows. Please select NTFS or exFAT.")
             if needs_uefi_ntfs(sel) and not sel.uefi_ntfs:
                 raise PlanError("The UEFI:NTFS boot image is required for NTFS/exFAT boot drives.")
             if sel.target == TARGET_BIOS_UEFI and info.is_windows and not tools.grub_bios:
-                raise PlanError("Legacy BIOS boot needs GRUB (sudo pacman -S grub).")
+                raise PlanError(f"Legacy BIOS boot needs GRUB ({install_hint('grub')}).")
             if not info.is_windows and not info.efi_bootable:
                 warnings.append("This image has no UEFI boot loader files, so the drive may not boot in "
                                 "ISO mode. DD mode is usually the better choice for this image.")
@@ -262,8 +261,8 @@ def validate(sel: Selection, tools: Tools) -> list[str]:
             raise PlanError("No usable file system is available for this drive.")
         fsd = FILESYSTEMS[sel.fs]
         if not tools.fs.get(sel.fs, True):
-            raise PlanError(f"Formatting as {fsd.name} requires the '{fsd.package}' package "
-                            f"(sudo pacman -S {fsd.package}).")
+            raise PlanError(f"Formatting as {fsd.name} requires the {package_names(fsd.package)} "
+                            f"package ({install_hint(fsd.package)}).")
         sizes, _ = cluster_sizes(sel.fs, d.size, d.log_sec)
         if not sizes:
             raise PlanError(f"{fsd.name} cannot be used on a drive of this size.")

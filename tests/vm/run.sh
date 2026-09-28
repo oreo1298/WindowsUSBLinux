@@ -7,13 +7,20 @@
 #  2. boots every produced stick in QEMU with UEFI (OVMF) and/or legacy BIOS and
 #     checks that the expected boot loader actually runs.
 #
-#   sudo KERNEL=/boot/vmlinuz-linux tests/vm/run.sh
+#   sudo tests/vm/run.sh                     # uses the running kernel
+#   sudo KERNEL=/path/to/vmlinuz tests/vm/run.sh
 #
-# Needed on Arch: qemu-full (or qemu-base + qemu-hw-usb-*), edk2-ovmf, virtme-ng (AUR),
-# busybox, grub, nasm, libisoburn, cdrtools, mtools, wimlib, ntfs-3g, exfatprogs, udftools.
+# Needs: QEMU (with USB emulation), OVMF/edk2 UEFI firmware, virtme-ng, busybox, GRUB
+# (x86_64-efi and i386-pc modules), nasm, xorriso, mkisofs or genisoimage, mtools, wimlib,
+# ntfs-3g, exfatprogs and udftools.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-KERNEL=${KERNEL:-/boot/vmlinuz-linux}
+if [ -z "${KERNEL:-}" ]; then
+    for k in "/boot/vmlinuz-$(uname -r)" /boot/vmlinuz-linux /boot/vmlinuz; do
+        [ -f "$k" ] && KERNEL=$k && break
+    done
+fi
+KERNEL=${KERNEL:-/boot/vmlinuz-$(uname -r)}
 # Must be visible inside the VM: virtme-ng shows the host /tmp but a fresh tmpfs on /var/tmp.
 WORK=${WORK:-$(mktemp -d /tmp/rufux-vmtest.XXXXXX)}
 [ "$(id -u)" -eq 0 ] || { echo "Please run as root"; exit 1; }

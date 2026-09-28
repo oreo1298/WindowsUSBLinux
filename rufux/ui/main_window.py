@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QElapsedTimer, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QFont
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-                               QProgressBar, QProgressDialog, QPushButton, QSizePolicy, QSlider,
-                               QSpinBox, QStyle, QToolButton, QVBoxLayout, QWidget)
+from .qt import (QAction, QApplication, QCheckBox, QComboBox, QElapsedTimer, QFileDialog, QFont,
+                 QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
+                 QProgressBar, QProgressDialog, QPushButton, QSettings, QSizePolicy, QSlider,
+                 QSpinBox, QStyle, Qt, QTimer, QToolButton, QVBoxLayout, QWidget, dialog_accepted)
 
 from .. import APP_NAME, HELPER_PROTOCOL, __version__
 from ..core import blockdevs, image, plan, uefintfs
+from ..core.distro import install_hint, package_names
 from ..core.fsdefs import FILESYSTEMS, cluster_label, cluster_sizes
 from ..core.plan import BOOT_IMAGE, BOOT_NONE, MODE_DD, MODE_ISO, PlanError, Selection, Tools
 from ..core.unattend import detect_regional_settings
@@ -90,11 +89,11 @@ class MainWindow(QMainWindow):
         v.addWidget(QLabel("Device"))
         row = QHBoxLayout()
         self.device_combo = QComboBox()
-        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.device_combo.setMinimumContentsLength(30)
         self.save_btn = small_button(
             "💾", "Save the drive to an image file",
-            theme_icon(self, ("document-save", "media-floppy"), QStyle.SP_DialogSaveButton))
+            theme_icon(self, ("document-save", "media-floppy"), QStyle.StandardPixmap.SP_DialogSaveButton))
         row.addWidget(self.device_combo, 1)
         row.addWidget(self.save_btn)
         v.addLayout(row)
@@ -104,15 +103,15 @@ class MainWindow(QMainWindow):
         self.boot_combo = QComboBox()
         self.boot_combo.addItem("Disk or ISO image (Please select)", BOOT_IMAGE)
         self.boot_combo.addItem("Non bootable", BOOT_NONE)
-        self.boot_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.boot_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.hash_btn = small_button("#", "Compute the image checksums (MD5, SHA1, SHA256, SHA512)")
         f = QFont(self.hash_btn.font())
         f.setBold(True)
         self.hash_btn.setFont(f)
         self.select_btn = QToolButton()
         self.select_btn.setText("SELECT")
-        self.select_btn.setPopupMode(QToolButton.MenuButtonPopup)
-        self.select_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.select_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.select_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.select_btn.setMinimumWidth(96)
         menu = QMenu(self.select_btn)
         act_select = QAction("Select an image...", self)
@@ -136,7 +135,7 @@ class MainWindow(QMainWindow):
         self.persist_row = QWidget()
         pr = QHBoxLayout(self.persist_row)
         pr.setContentsMargins(0, 0, 0, 0)
-        self.persist_slider = QSlider(Qt.Horizontal)
+        self.persist_slider = QSlider(Qt.Orientation.Horizontal)
         self.persist_spin = QSpinBox()
         self.persist_spin.setSuffix(" GB")
         self.persist_spin.setSpecialValueText("No persistence")
@@ -203,16 +202,16 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
         self.progress.setTextVisible(True)
-        self.progress.setAlignment(Qt.AlignCenter)
+        self.progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress.setFormat("READY")
         self.progress.setMinimumHeight(28)
         v.addWidget(self.progress)
 
         row = QHBoxLayout()
-        self.about_btn = small_button("i", "About", theme_icon(self, ("help-about",), QStyle.SP_MessageBoxInformation))
+        self.about_btn = small_button("i", "About", theme_icon(self, ("help-about",), QStyle.StandardPixmap.SP_MessageBoxInformation))
         self.log_btn = small_button("Log", "Show the log",
                                     theme_icon(self, ("text-x-generic", "document-properties"),
-                                               QStyle.SP_FileDialogDetailedView))
+                                               QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self.start_btn = QPushButton("START")
         self.close_btn = QPushButton("CLOSE")
         for b in (self.start_btn, self.close_btn):
@@ -286,14 +285,16 @@ class MainWindow(QMainWindow):
         s.setValue("adv_format", self.adv_format.expanded)
 
     def _log_tools(self) -> None:
-        missing = [f"{FILESYSTEMS[fs].name} ({FILESYSTEMS[fs].package})"
+        missing = [f"{FILESYSTEMS[fs].name} ({package_names(FILESYSTEMS[fs].package)})"
                    for fs, ok in self.tools.fs.items() if not ok]
         if missing:
             self.log("Not available (package not installed): " + ", ".join(missing))
         if not self.tools.wimlib:
-            self.log("wimlib is not installed: Windows images with install.wim > 4 GB need NTFS")
+            self.log("wimlib is not installed: Windows images with install.wim > 4 GB need NTFS "
+                     f"({install_hint('wimlib')})")
         if not self.tools.grub_bios:
-            self.log("GRUB (i386-pc) is not installed: legacy BIOS boot of Windows media is unavailable")
+            self.log("GRUB (i386-pc) is not installed: legacy BIOS boot of Windows media is unavailable "
+                     f"({install_hint('grub')})")
 
     # ------------------------------------------------------------- logging --
 
@@ -361,7 +362,7 @@ class MainWindow(QMainWindow):
             idx = self.device_combo.count() - 1
             self.device_combo.setItemData(idx, f"{d.path} - {d.vendor_model or 'unknown model'}, "
                                                f"{human_size(d.size)}, {d.tran or 'unknown bus'}",
-                                          Qt.ToolTipRole)
+                                          Qt.ItemDataRole.ToolTipRole)
         self.drives = new
         if current in new:
             self.device_combo.setCurrentIndex(list(new).index(current))
@@ -593,7 +594,7 @@ class MainWindow(QMainWindow):
         self.target_combo.setCurrentIndex(targets.index(sel.target))
         self.target_combo.setEnabled(len(targets) > 1)
         if has_image and sel.image.is_windows and sel.scheme == "mbr" and not tools.grub_bios:
-            self.target_combo.setToolTip("Install 'grub' (sudo pacman -S grub) to also create "
+            self.target_combo.setToolTip(f"Install GRUB ({install_hint('grub')}) to also create "
                                          "legacy BIOS bootable Windows drives")
         else:
             self.target_combo.setToolTip("")
@@ -695,7 +696,7 @@ class MainWindow(QMainWindow):
         sel.regional = None
         if info is not None and sel.mode == MODE_ISO and info.windows is not None and info.windows.supports_wue:
             dlg = WueDialog(info.windows.is_win11, self)
-            if dlg.exec() != WueDialog.Accepted:
+            if not dialog_accepted(dlg):
                 return
             sel.wue = dlg.options()
             if sel.wue.duplicate_locale:
@@ -706,7 +707,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, APP_NAME, str(exc))
             return
         for w in warnings:
-            if not ask(self, APP_NAME, w, QMessageBox.Warning, "Do you want to continue anyway?"):
+            if not ask(self, APP_NAME, w, QMessageBox.Icon.Warning, "Do you want to continue anyway?"):
                 return
         d = sel.drive
         extra = ""
@@ -718,7 +719,7 @@ class MainWindow(QMainWindow):
         if not ask(self, APP_NAME,
                    f"WARNING: ALL DATA ON DEVICE '{d.display_name()}' WILL BE DESTROYED.\n"
                    "To continue with this operation, click OK. To quit click CANCEL.",
-                   QMessageBox.Warning, extra):
+                   QMessageBox.Icon.Warning, extra):
             return
         job = plan.build_job(sel, self.tools)
         self.log("")
@@ -731,12 +732,12 @@ class MainWindow(QMainWindow):
         if not ask(self, APP_NAME,
                    "Booting an NTFS or exFAT drive through UEFI requires the small UEFI:NTFS boot image "
                    "from the Rufus project.",
-                   QMessageBox.Question,
+                   QMessageBox.Icon.Question,
                    f"It is normally installed with the {APP_NAME} package. Download it now from GitHub "
                    f"(pbatard/rufus {uefintfs.RUFUS_VERSION}, verified by checksum)?"):
             return None
         dlg = QProgressDialog("Downloading UEFI:NTFS...", "Cancel", 0, 100, self)
-        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
         dlg.setAutoReset(False)
         dlg.setMinimumDuration(0)
         task = Task(lambda t: uefintfs.download(t.report), self)
@@ -767,7 +768,7 @@ class MainWindow(QMainWindow):
         free = os.statvfs(os.path.dirname(path))
         if free.f_bavail * free.f_frsize < d.size:
             if not ask(self, APP_NAME, f"There may not be enough free space for {human_size(d.size)}.",
-                       QMessageBox.Warning, "Continue anyway?"):
+                       QMessageBox.Icon.Warning, "Continue anyway?"):
                 return
         job = {"protocol": HELPER_PROTOCOL, "action": "save",
                "device": {"path": d.path, "size": d.size, "serial": d.serial, "model": d.model},
@@ -846,7 +847,7 @@ class MainWindow(QMainWindow):
 
     def _on_close_clicked(self) -> None:
         if self.busy:
-            if ask(self, APP_NAME, "Cancel the current operation?", QMessageBox.Question,
+            if ask(self, APP_NAME, "Cancel the current operation?", QMessageBox.Icon.Question,
                    "The drive will most likely be unusable until it is written again."):
                 self.status("Cancelling...")
                 self.helper.cancel()
@@ -855,7 +856,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         if self.busy:
-            if ask(self, APP_NAME, "An operation is in progress. Cancel it and quit?", QMessageBox.Warning):
+            if ask(self, APP_NAME, "An operation is in progress. Cancel it and quit?", QMessageBox.Icon.Warning):
                 self.close_after = True
                 self.helper.cancel()
             event.ignore()

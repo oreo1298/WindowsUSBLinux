@@ -1,4 +1,4 @@
-"""Offscreen smoke tests of the Qt window (skipped when PySide6 is unavailable)."""
+"""Offscreen smoke tests of the Qt window (skipped when neither PySide6 nor PyQt6 is installed)."""
 
 import os
 import struct
@@ -7,7 +7,10 @@ import time
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+try:
+    from rufux.ui import qt
+except ImportError as exc:  # no Qt binding installed
+    pytest.skip(str(exc), allow_module_level=True)
 
 from conftest import have, make_fake_wim, run  # noqa: E402
 from rufux.core import blockdevs, plan  # noqa: E402
@@ -18,11 +21,9 @@ FAKE = blockdevs.Drive(name="sdz", path="/dev/sdz", size=32_010_928_128, model="
 
 @pytest.fixture(scope="module")
 def app():
-    from PySide6.QtCore import QCoreApplication
-
-    QCoreApplication.setOrganizationName("rufux-tests")
-    QCoreApplication.setApplicationName("rufux-tests")
-    inst = QtWidgets.QApplication.instance() or QtWidgets.QApplication(["rufux-tests"])
+    qt.QCoreApplication.setOrganizationName("rufux-tests")
+    qt.QCoreApplication.setApplicationName("rufux-tests")
+    inst = qt.QApplication.instance() or qt.QApplication(["rufux-tests"])
     yield inst
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 
 KiB = 1024
@@ -42,6 +43,15 @@ def human_size(n: int | float | None, marketing: bool = False) -> str:
 def format_duration(seconds: float) -> str:
     seconds = max(0, int(seconds))
     return f"{seconds // 3600:02d}:{(seconds // 60) % 60:02d}:{seconds % 60:02d}"
+
+
+GRUB_I386_DIRS = ("/usr/lib/grub/i386-pc", "/usr/lib/grub2/i386-pc", "/usr/share/grub2/i386-pc")
+
+
+def grub_bios_available() -> bool:
+    """grub-install and the i386-pc (legacy BIOS) modules are both installed."""
+    return which("grub-install", "grub2-install") is not None and any(
+        os.path.isdir(d) for d in GRUB_I386_DIRS)
 
 
 def which(*names: str) -> str | None:

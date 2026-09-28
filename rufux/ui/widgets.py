@@ -6,10 +6,8 @@ import os
 import traceback
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QThread, Signal
-from PySide6.QtGui import QFont, QIcon
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy, QStyle, QToolButton,
-                               QVBoxLayout, QWidget)
+from .qt import (QFont, QFrame, QHBoxLayout, QIcon, QLabel, QSize, QSizePolicy, QStyle, Qt, QThread,
+                 QToolButton, QVBoxLayout, QWidget, Signal)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -44,9 +42,9 @@ class SectionHeader(QWidget):
         font.setPointSizeF(font.pointSizeF() * 1.25)
         label.setFont(font)
         line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        line.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         lay.addWidget(label)
         lay.addWidget(line, 1)
 
@@ -64,11 +62,11 @@ class Collapsible(QWidget):
         lay.setSpacing(2)
         self.expanded = False
         self.button = QToolButton()
-        self.button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.button.setAutoRaise(True)
-        self.button.setArrowType(Qt.RightArrow)
+        self.button.setArrowType(Qt.ArrowType.RightArrow)
         self.button.setText(show_text)
-        self.button.setCursor(Qt.PointingHandCursor)
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.button.clicked.connect(lambda: self._on_toggle(not self.expanded))
         self.body = QWidget()
         self.body_layout = QVBoxLayout(self.body)
@@ -80,7 +78,7 @@ class Collapsible(QWidget):
 
     def _on_toggle(self, checked: bool) -> None:
         self.expanded = checked
-        self.button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        self.button.setArrowType(Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
         self.button.setText(self.hide_text if checked else self.show_text)
         self.body.setVisible(checked)
         self.toggled.emit(checked)

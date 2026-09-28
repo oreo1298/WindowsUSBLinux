@@ -1,6 +1,7 @@
 # Maintainer: oreo1298
 #
-# Local build from a clone of this repository (Arch Linux / CachyOS):
+# Arch Linux and Arch-based distributions (CachyOS, EndeavourOS, Manjaro, ...).
+# Local build from a clone of this repository:
 #
 #   git clone https://github.com/oreo1298/WindowsUSBLinux.git
 #   cd WindowsUSBLinux

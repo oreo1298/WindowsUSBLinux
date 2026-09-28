@@ -1,4 +1,4 @@
-"""Rufux - a Rufus-style bootable USB creator for Linux (Arch / CachyOS)."""
+"""Rufux - a Rufus-style bootable USB creator for Linux."""
 
 __version__ = "1.0.0"
 

@@ -6,11 +6,10 @@ import getpass
 import hashlib
 import os
 
-from PySide6.QtCore import QSettings, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QFontDatabase, QGuiApplication
-from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
-                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
+from .qt import (QCheckBox, QDesktopServices, QDialog, QDialogButtonBox, QFileDialog, QFont,
+                 QFontDatabase, QGridLayout, QGuiApplication, QHBoxLayout, QLabel, QLineEdit,
+                 QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSettings, Qt, QUrl,
+                 QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
 from ..core.unattend import WueOptions, sanitize_username, username_problem
@@ -26,7 +25,7 @@ class LogDialog(QDialog):
         lay = QVBoxLayout(self)
         self.text = QPlainTextEdit()
         self.text.setReadOnly(True)
-        self.text.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.text.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.text.setMaximumBlockCount(50000)
         lay.addWidget(self.text)
         row = QHBoxLayout()
@@ -67,7 +66,7 @@ class ChecksumDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel(f"<b>{os.path.basename(path)}</b>"))
         grid = QGridLayout()
-        mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         self.fields: dict[str, QLineEdit] = {}
         for row, (label, algo) in enumerate(self.ALGOS):
             grid.addWidget(QLabel(label + ":"), row, 0)
@@ -93,7 +92,7 @@ class ChecksumDialog(QDialog):
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
         lay.addWidget(self.bar)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
         self.task = Task(self._compute, self)
@@ -191,7 +190,7 @@ class WueDialog(QDialog):
                       "new one at first logon.</small>")
         note.setWordWrap(True)
         lay.addWidget(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
@@ -234,17 +233,17 @@ def _default_username() -> str:
 
 
 DOWNLOADS = [
-    ("Arch Linux", "https://archlinux.org/download/"),
-    ("CachyOS", "https://cachyos.org/download/"),
     ("Windows 11", "https://www.microsoft.com/software-download/windows11"),
     ("Windows 10", "https://www.microsoft.com/software-download/windows10ISO"),
+    ("Ubuntu", "https://ubuntu.com/download/desktop"),
+    ("Linux Mint", "https://linuxmint.com/download.php"),
+    ("Debian", "https://www.debian.org/distrib/"),
+    ("Fedora", "https://fedoraproject.org/workstation/download"),
+    ("openSUSE", "https://get.opensuse.org/"),
+    ("Arch Linux", "https://archlinux.org/download/"),
+    ("CachyOS", "https://cachyos.org/download/"),
     ("EndeavourOS", "https://endeavouros.com/"),
     ("Manjaro", "https://manjaro.org/products/download/x86"),
-    ("Ubuntu", "https://ubuntu.com/download/desktop"),
-    ("Fedora", "https://fedoraproject.org/workstation/download"),
-    ("Debian", "https://www.debian.org/distrib/"),
-    ("Linux Mint", "https://linuxmint.com/download.php"),
-    ("openSUSE", "https://get.opensuse.org/"),
     ("SystemRescue", "https://www.system-rescue.org/Download/"),
 ]
 
@@ -266,7 +265,7 @@ class DownloadDialog(QDialog):
                      "to compare its checksum with the one published by the distribution.</small>")
         tip.setWordWrap(True)
         lay.addWidget(tip)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
 
@@ -275,24 +274,25 @@ def show_about(parent: QWidget) -> None:
     box = QMessageBox(parent)
     box.setWindowTitle(f"About {APP_NAME}")
     box.setIconPixmap(app_icon().pixmap(64, 64))
-    box.setTextFormat(Qt.RichText)
+    box.setTextFormat(Qt.TextFormat.RichText)
     box.setText(
         f"<h3>{APP_NAME} {__version__}</h3>"
-        "<p>Create bootable USB drives from ISO and disk images on Linux.<br>"
-        "A Rufus-style tool built for Arch Linux and CachyOS.</p>"
+        "<p>A Rufus-style tool for creating bootable USB drives from ISO and disk images "
+        "on Linux.</p>"
         "<p>Inspired by <a href='https://rufus.ie'>Rufus</a> by Pete Batard (not affiliated).<br>"
         "UEFI:NTFS &copy; Pete Batard (GPLv2+).<br>"
         "Uses util-linux, dosfstools, ntfs-3g, exfatprogs, e2fsprogs, wimlib and GRUB.</p>"
         "<p>License: GNU GPL v3 or later.</p>")
-    box.setStandardButtons(QMessageBox.Ok)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
     box.exec()
 
 
-def ask(parent: QWidget, title: str, text: str, icon=QMessageBox.Warning, informative: str = "") -> bool:
-    box = QMessageBox(icon, title, text, QMessageBox.Ok | QMessageBox.Cancel, parent)
+def ask(parent: QWidget, title: str, text: str, icon=QMessageBox.Icon.Warning, informative: str = "") -> bool:
+    box = QMessageBox(icon, title, text, QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, parent)
     if informative:
         box.setInformativeText(informative)
-    box.setDefaultButton(QMessageBox.Cancel)
-    return box.exec() == QMessageBox.Ok
+    box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+    box.exec()
+    return box.clickedButton() == box.button(QMessageBox.StandardButton.Ok)
 
 
