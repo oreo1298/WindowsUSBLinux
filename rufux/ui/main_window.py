@@ -610,7 +610,7 @@ class MainWindow(QMainWindow):
             self.fs_combo.addItem("(from the image)", "")
         for fs in fss:
             name = FILESYSTEMS[fs].name
-            if fs == "fat32" and drive_size > 32 * 1000 ** 3:
+            if fs == "fat32" and drive_size > 32 * GiB:  # Rufus' LARGE_FAT32_SIZE
                 name = "Large FAT32"
             if fs == default_fs:
                 name += " (Default)"

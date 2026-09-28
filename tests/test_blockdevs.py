@@ -1,3 +1,5 @@
+import pytest
+
 from rufux.core import blockdevs
 from rufux.core.fsdefs import cluster_label, cluster_sizes, sanitize_label
 from rufux.core.util import GiB, MiB, TiB, human_size
@@ -69,7 +71,10 @@ def test_image_on_drive(monkeypatch, tmp_path):
 
 def test_real_lsblk_runs():
     # Just make sure parsing the host's real lsblk output works.
-    blockdevs.list_drives(include_hidden=True)
+    try:
+        blockdevs.list_drives(include_hidden=True)
+    except blockdevs.BlockDevError as exc:  # e.g. inside a minimal build chroot
+        pytest.skip(str(exc))
 
 
 def test_cluster_sizes_match_rufus():

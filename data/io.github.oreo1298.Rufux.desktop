@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rufux
+GenericName=Bootable USB Creator
+Comment=Create bootable USB drives from Windows and Linux ISO images
+Exec=rufux %f
+Icon=io.github.oreo1298.Rufux
+Terminal=false
+Categories=System;Utility;
+Keywords=usb;iso;bootable;rufus;windows;linux;installer;flash;format;dd;
+MimeType=application/x-cd-image;application/x-iso9660-image;application/vnd.efi.iso;application/x-raw-disk-image;application/vnd.efi.img;
+StartupWMClass=rufux

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.oreo1298.Rufux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Rufux</name>
+  <summary>Create bootable USB drives from Windows and Linux images</summary>
+  <description>
+    <p>
+      Rufux is a Rufus-style bootable USB creator for Linux. It writes Linux images
+      in DD mode, builds Windows 10/11 installation drives (FAT32 with split WIM, or
+      NTFS/exFAT with UEFI:NTFS), formats drives, checks them for bad blocks and
+      counterfeit capacity, and can save a drive to an image file.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.oreo1298.Rufux.desktop</launchable>
+  <url type="homepage">https://github.com/oreo1298/WindowsUSBLinux</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>rufux</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-09-28"/>
+  </releases>
+</component>
