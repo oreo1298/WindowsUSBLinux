@@ -131,7 +131,8 @@ def do_write(ctx: Context, job: dict) -> str:
     if mode == "dd":
         ctx.status("Writing image (DD mode)...")
         assert image_fd is not None
-        dd.write_image(ctx, target.path, target.size, image_fd, job.get("compression") or None,
+        # write_image() takes ownership of (and closes) the descriptor it is given.
+        dd.write_image(ctx, target.path, target.size, os.dup(image_fd), job.get("compression") or None,
                        verify=bool(job.get("verify", True)), sector_size=target.sector_size)
         target.reread()
         result = "Image written successfully"
