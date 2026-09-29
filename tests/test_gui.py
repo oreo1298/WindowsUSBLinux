@@ -116,3 +116,29 @@ def test_busy_state_toggles_controls(window):
     assert w.close_btn.text() == "CANCEL"
     w.set_busy(False)
     assert w.device_combo.isEnabled() and w.close_btn.text() == "CLOSE"
+
+
+def test_progress_survives_multi_gigabyte_values(app):
+    # Regression: byte counts above 2 GiB used to overflow a 32-bit signal argument
+    # (PySide6 raised, so the bar never moved; PyQt6 wrapped them to >100% and negatives).
+    from rufux.ui.helper_client import HelperClient
+
+    client = HelperClient()
+    seen = []
+    client.progress.connect(lambda phase, done, total, msg: seen.append((done, total)))
+    total = 6_000_000_000
+    steps = [1_000_000_000, 2_500_000_000, 4_500_000_000, total]
+    for done in steps:
+        client._dispatch({"t": "progress", "phase": "copy", "done": done, "total": total, "msg": ""})
+    assert seen == [(done, total) for done in steps]
+
+
+def test_progress_bar_stays_within_bounds(window):
+    w = window()
+    w._on_helper_progress("copy", 4_500_000_000, 6_000_000_000, "")
+    assert w.progress.value() == 750
+    assert w.progress.format() == "Copying ISO files: 75.0%"
+    w._on_helper_progress("write", 7_000_000_000, 6_000_000_000, "")
+    assert w.progress.value() == 1000 and w.progress.format() == "Writing image: 100.0%"
+    w._on_helper_progress("write", -5, 6_000_000_000, "")
+    assert w.progress.value() == 0 and w.progress.format() == "Writing image: 0.0%"

@@ -792,8 +792,8 @@ class MainWindow(QMainWindow):
         self.progress.setFormat(msg.rstrip("."))
 
     def _on_helper_progress(self, phase: str, done: int, total: int, msg: str) -> None:
-        frac = done / total if total > 0 else 0.0
-        self.progress.setValue(int(min(frac, 1.0) * 1000))
+        frac = min(max(done / total, 0.0), 1.0) if total > 0 else 0.0
+        self.progress.setValue(int(frac * 1000))
         self.progress.setFormat(f"{PHASES.get(phase, 'Working')}: {frac * 100:.1f}%")
         if msg:
             self.status(msg)

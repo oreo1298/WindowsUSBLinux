@@ -1,6 +1,6 @@
 """Rufux - a Rufus-style bootable USB creator for Linux."""
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 APP_NAME = "Rufux"
 APP_ID = "io.github.oreo1298.Rufux"

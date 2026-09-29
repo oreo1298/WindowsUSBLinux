@@ -36,7 +36,9 @@ def helper_command() -> tuple[str, list[str]]:
 class HelperClient(QObject):
     log = Signal(str)
     status = Signal(str)
-    progress = Signal(str, int, int, str)  # phase, done, total, message
+    # phase, done, total, message.  done/total are byte counts that easily exceed
+    # 2 GiB, so they must not be declared as (32-bit C++) int.
+    progress = Signal(str, object, object, str)
     finished = Signal(bool, bool, str)  # ok, cancelled, message
 
     def __init__(self, parent=None):

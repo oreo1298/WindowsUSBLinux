@@ -7,11 +7,12 @@
 #   cd WindowsUSBLinux
 #   makepkg -si
 #
-# This PKGBUILD packages the working tree it sits in, so a plain `git pull`
-# followed by `makepkg -si` installs the latest version.
+# This PKGBUILD packages the working tree it sits in, so `git pull` followed by
+# `makepkg -sif` installs the latest version (-f rebuilds instead of reinstalling
+# the package that was built last time).
 
 pkgname=rufux
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 _rufusver=v4.15
 pkgdesc="Rufus-style bootable USB creator for Linux (Windows 10/11 and Linux images)"

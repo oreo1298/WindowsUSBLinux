@@ -156,8 +156,9 @@ sudo make PYTHON_GUI=$HOME/.local/share/rufux-venv/bin/python install
 ### Starting and updating
 
 Start **Rufux** from your application menu, or run `rufux` (optionally `rufux some-image.iso`).
-To update, run `git pull` in the repository folder, then repeat the install command you used
-(`sudo make install` or `makepkg -si`).
+To update, run `git pull` in the repository folder, then install again: `sudo make install`,
+or `makepkg -sif` on Arch-based distributions (the `-f` makes makepkg build the new version
+instead of reinstalling the package it built last time).
 
 ### Running from source without installing
 
