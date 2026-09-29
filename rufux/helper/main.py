@@ -12,7 +12,7 @@ import threading
 import traceback
 
 from .. import HELPER_PROTOCOL, __version__
-from ..core import blockdevs
+from ..core import blockdevs, rufusfiles
 from ..core.fsdefs import FILESYSTEMS
 from ..core.isofs import ImageFS, IsoError
 from ..core.util import human_size
@@ -80,6 +80,21 @@ def _load_uefi_ntfs(ctx: Context, path: str) -> bytes:
     return data
 
 
+def _load_setup_wrapper(ctx: Context, path: str) -> tuple[str, bytes]:
+    """Read Rufus' setup.exe wrapper; only the exact pinned files are accepted."""
+    fd = ctx.open_user_file(path)
+    try:
+        with os.fdopen(os.dup(fd), "rb") as f:
+            data = f.read(rufusfiles.MAX_SIZE + 1)
+    finally:
+        os.close(fd)
+    arch = rufusfiles.identify_setup_wrapper(data)
+    if arch is None:
+        raise HelperError(f"'{path}' is not the setup wrapper from Rufus {rufusfiles.RUFUS_VERSION} "
+                          "(checksum mismatch)")
+    return arch, data
+
+
 def do_write(ctx: Context, job: dict) -> str:
     mode = _check_str(job, "mode", ("dd", "iso", "format"))
     target = TargetDevice(ctx, job.get("device") or {}, allow_loop=_allow_loop())
@@ -99,6 +114,7 @@ def do_write(ctx: Context, job: dict) -> str:
     # Resolve everything that can fail before touching the drive.
     fs = scheme = ""
     uefi_blob = None
+    wrapper = None
     img = None
     if mode in ("iso", "format"):
         fs = _check_str(job, "filesystem", tuple(FILESYSTEMS))
@@ -119,6 +135,16 @@ def do_write(ctx: Context, job: dict) -> str:
             ctx.tool("wimlib-imagex", package="wimlib")
         if opts.get("bios_grub"):
             ctx.tool("grub-install", "grub2-install", package="grub")
+        if opts.get("unattend") is not None:
+            _check_str(opts, "unattend")
+            if _check_str(opts, "unattend_target", ("bootwim", "oem")) == "bootwim":
+                ctx.tool("wimlib-imagex", package="wimlib")
+                boot_wim = _check_str(opts, "boot_wim")
+                entry = img.lookup(boot_wim)
+                if entry is None or entry.is_dir:
+                    raise HelperError(f"'{boot_wim}' was not found in the image")
+        if opts.get("setup_wrapper"):
+            wrapper = _load_setup_wrapper(ctx, _check_str(opts, "setup_wrapper"))
 
     target.unmount_all()
     target.ensure_unused()
@@ -137,7 +163,7 @@ def do_write(ctx: Context, job: dict) -> str:
         target.reread()
         result = "Image written successfully"
     else:
-        result = _format_and_populate(ctx, job, target, mode, fs, scheme, uefi_blob, img, image_fd)
+        result = _format_and_populate(ctx, job, target, mode, fs, scheme, uefi_blob, img, image_fd, wrapper)
 
     if job.get("eject"):
         ctx.status("Ejecting the drive...")
@@ -148,7 +174,8 @@ def do_write(ctx: Context, job: dict) -> str:
 
 
 def _format_and_populate(ctx: Context, job: dict, target: TargetDevice, mode: str, fs: str, scheme: str,
-                         uefi_blob: bytes | None, img: ImageFS | None, image_fd: int | None) -> str:
+                         uefi_blob: bytes | None, img: ImageFS | None, image_fd: int | None,
+                         wrapper: tuple[str, bytes] | None = None) -> str:
     opts = job.get("iso") or {}
     persistence = opts.get("persistence") if mode == "iso" else None
     persistence_size = int(job.get("persistence_size") or 0) if persistence else 0
@@ -182,8 +209,10 @@ def _format_and_populate(ctx: Context, job: dict, target: TargetDevice, mode: st
             split_wim=str(opts.get("split_wim") or ""),
             bios_grub=bool(opts.get("bios_grub")),
             unattend=opts.get("unattend") if isinstance(opts.get("unattend"), str) else None,
-            unattend_target="oem" if opts.get("unattend_target") == "oem" else "root",
+            unattend_target="oem" if opts.get("unattend_target") == "oem" else "bootwim",
+            boot_wim=str(opts.get("boot_wim") or "sources/boot.wim"),
             bypass_appraiser=bool(opts.get("bypass_appraiser")),
+            setup_wrapper=wrapper,
             patch_labels=bool(opts.get("patch_labels", True)),
             persistence=persistence if persistence in ("casper", "live") else None,
             extended_label=bool(job.get("extended_label", True)),

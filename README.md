@@ -30,6 +30,9 @@ and formats USB sticks and SD cards. It runs on any modern Linux distribution.
     and TPM 2.0 requirements, remove the online Microsoft account requirement, create a local
     account, skip the privacy questions, copy your regional settings, and disable BitLocker
     automatic encryption.
+  - **In-place upgrades**: run `setup.exe` from the drive inside Windows to upgrade while keeping
+    your files and apps, the same as with a Rufus drive. This also works on PCs that don't meet
+    the Windows 11 requirements (see [Upgrading Windows in place](#upgrading-windows-in-place)).
 - **Non-bootable formatting**: FAT, FAT32 (including "Large FAT32"), NTFS, exFAT, UDF,
   ext2/3/4, on MBR or GPT, with an optional quick format and extended label (`autorun.inf` + icon).
 - **Bad blocks and counterfeit-drive check** (1–4 passes). Every block is tagged with its own
@@ -52,9 +55,10 @@ Rufux needs:
 - **Python 3.10** or newer, with **PyQt6** or **PySide6** (either one works)
 - **polkit** (`pkexec`), which every desktop has, to ask for your password when writing
 - **util-linux** (`lsblk`, `sfdisk`, `wipefs`), **dosfstools** and **e2fsprogs**
+- **wimlib**, for Windows drives: it splits an `install.wim` over 4 GB so the drive can stay
+  FAT32, and stores the Windows setup options inside `boot.wim`
 
-Recommended extras: **wimlib** (lets Windows images with an `install.wim` over 4 GB stay on
-FAT32), **ntfs-3g** (NTFS) and **exfatprogs** (exFAT).
+Recommended extras: **ntfs-3g** (NTFS) and **exfatprogs** (exFAT).
 
 Follow the section for your distribution: install the dependencies, download the source, then
 install. Every method except the Arch package installs under `/usr/local`.
@@ -62,11 +66,11 @@ install. Every method except the Arch package installs under `/usr/local`.
 ### Debian, Ubuntu, Linux Mint, Pop!_OS, Zorin OS, elementary OS
 
 ```bash
-sudo apt install git make python3-pyqt6 pkexec dosfstools fdisk e2fsprogs
-sudo apt install ntfs-3g exfatprogs wimtools    # recommended
+sudo apt install git make python3-pyqt6 pkexec dosfstools fdisk e2fsprogs wimtools
+sudo apt install ntfs-3g exfatprogs    # recommended
 git clone https://github.com/oreo1298/WindowsUSBLinux.git
 cd WindowsUSBLinux
-make uefi-ntfs.img                              # optional, see below
+make rufus-files                       # optional, see below
 sudo make install
 ```
 
@@ -76,33 +80,33 @@ On older releases (Ubuntu 22.04, Debian 11) the `pkexec` package is called `poli
 ### Fedora
 
 ```bash
-sudo dnf install git make python3-pyqt6 polkit dosfstools util-linux e2fsprogs
-sudo dnf install ntfs-3g ntfsprogs exfatprogs wimlib-utils    # recommended
+sudo dnf install git make python3-pyqt6 polkit dosfstools util-linux e2fsprogs wimlib-utils
+sudo dnf install ntfs-3g ntfsprogs exfatprogs    # recommended
 git clone https://github.com/oreo1298/WindowsUSBLinux.git
 cd WindowsUSBLinux
-make uefi-ntfs.img                                            # optional, see below
+make rufus-files                                 # optional, see below
 sudo make install
 ```
 
 ### openSUSE (Tumbleweed and Leap)
 
 ```bash
-sudo zypper install git make python3-PyQt6 polkit dosfstools util-linux e2fsprogs
-sudo zypper install ntfs-3g ntfsprogs exfatprogs wimtools    # recommended
+sudo zypper install git make python3-PyQt6 polkit dosfstools util-linux e2fsprogs wimtools
+sudo zypper install ntfs-3g ntfsprogs exfatprogs    # recommended
 git clone https://github.com/oreo1298/WindowsUSBLinux.git
 cd WindowsUSBLinux
-make uefi-ntfs.img                                           # optional, see below
+make rufus-files                                    # optional, see below
 sudo make install
 ```
 
 ### Arch Linux, CachyOS, EndeavourOS, Manjaro and other Arch-based distributions
 
-The repository includes a PKGBUILD, so Rufux installs as a normal pacman package (with the
-UEFI:NTFS image included):
+The repository includes a PKGBUILD, so Rufux installs as a normal pacman package, with the
+files it uses from the Rufus project included (see the notes below):
 
 ```bash
 sudo pacman -S --needed git base-devel
-sudo pacman -S --needed ntfs-3g exfatprogs wimlib    # recommended
+sudo pacman -S --needed ntfs-3g exfatprogs    # recommended
 git clone https://github.com/oreo1298/WindowsUSBLinux.git
 cd WindowsUSBLinux
 makepkg -si
@@ -132,9 +136,12 @@ sudo make PYTHON_GUI=$HOME/.local/share/rufux-venv/bin/python install
 
 ### Notes for every distribution
 
-- **`make uefi-ntfs.img`** downloads the UEFI:NTFS boot image from the Rufus v4.15 release (with
-  `curl` or `wget`) and checks its SHA-256, so `make install` can bundle it. It's only needed for
-  NTFS/exFAT boot drives. If you skip it, Rufux offers to download it the first time you need it.
+- **`make rufus-files`** downloads three small files from the Rufus v4.15 release (with `curl` or
+  `wget`) and checks their SHA-256, so `make install` can bundle them: the UEFI:NTFS boot image
+  (needed for NTFS/exFAT boot drives) and Rufus' signed `setup.exe` wrappers for x64 and ARM64
+  (used on Windows 11 24H2+ drives, see [Upgrading Windows in place](#upgrading-windows-in-place)).
+  If you skip it, Rufux offers to download a file the first time it's needed. The Arch package
+  always includes them.
 - **Legacy BIOS boot for Windows drives** (MBR → "BIOS or UEFI") needs GRUB's BIOS modules:
 
   | Distribution family | Packages |
@@ -153,12 +160,27 @@ sudo make PYTHON_GUI=$HOME/.local/share/rufux-venv/bin/python install
 - When a tool is missing, Rufux tells you which package to install, using your distribution's
   package manager.
 
-### Starting and updating
+### Starting Rufux
 
 Start **Rufux** from your application menu, or run `rufux` (optionally `rufux some-image.iso`).
-To update, run `git pull` in the repository folder, then install again: `sudo make install`,
-or `makepkg -sif` on Arch-based distributions (the `-f` makes makepkg build the new version
-instead of reinstalling the package it built last time).
+The version is shown in the title bar.
+
+### Updating Rufux
+
+Open a terminal in the folder you cloned, download the latest version, and install it again the
+same way you installed it. Your settings are kept.
+
+| Installed with | Update with |
+|----------------|-------------|
+| `makepkg -si` (Arch-based) | `git pull && makepkg -sif` |
+| `sudo make install` | `git pull && make rufus-files && sudo make install` |
+| `sudo make install` with the PySide6 virtual environment | `git pull && make rufus-files && sudo make PYTHON_GUI=$HOME/.local/share/rufux-venv/bin/python install` |
+
+On Arch, the `-f` matters: without it, makepkg reinstalls the package it built last time instead
+of building the new version whenever the version number hasn't changed. `make rufus-files` only
+downloads what is missing, and you can leave it out (Rufux then offers to download those files
+when it needs them). Drives you made with an older version keep working, but re-create them to
+get fixes that change what is written to the drive.
 
 ### Running from source without installing
 
@@ -181,8 +203,8 @@ Use the command that matches how you installed Rufux:
 | `makepkg -si` (Arch-based) | `sudo pacman -Rns rufux` |
 | `sudo make install` with the PySide6 virtual environment | `sudo make uninstall`, then `rm -rf ~/.local/share/rufux-venv` |
 
-Then remove your personal settings, the UEFI:NTFS download cache (only present if Rufux downloaded
-it), and the repository folder:
+Then remove your personal settings, the download cache (only present if Rufux downloaded the
+UEFI:NTFS image or a setup wrapper), and the repository folder:
 
 ```bash
 rm -rf ~/.config/rufux ~/.cache/rufux
@@ -218,10 +240,46 @@ GRUB if your computer boots with it.**
   they also start with Secure Boot enabled. If a particular PC still refuses the drive, use FAT32
   or temporarily disable Secure Boot.
 - For old BIOS-only PCs, choose **MBR** and **BIOS or UEFI** (needs `grub`).
-- The customization options are written to `autounattend.xml` at the root of the drive. If you
-  only chose options that apply after installation, they go to
-  `sources/$OEM$/$$/Panther/unattend.xml` instead, which is the same split Rufus uses. With the
-  requirement bypass enabled, `sources/appraiserres.dll` is also neutralized for in-place upgrades.
+- The customization options are stored where Rufus stores them. The requirement bypass has to act
+  while Windows Setup starts, so the answer file goes inside `sources/boot.wim` (as
+  `Autounattend.xml` in the Setup image). Windows only reads it when a PC boots from the drive, so
+  it never gets in the way of an in-place upgrade. If you only chose options that apply after
+  installation, they go to `sources/$OEM$/$$/Panther/unattend.xml` instead. Nothing is written
+  to the root of the drive.
+- With the requirement bypass, `sources/appraiserres.dll` is emptied and, for Windows 11 24H2
+  and later, `setup.exe` is replaced by Rufus' wrapper (the original becomes `setup.dll`). Both
+  are there for in-place upgrades, when you run `setup.exe` from within Windows.
+
+### Upgrading Windows in place
+
+A Windows drive made with Rufux can also upgrade the Windows that is already installed on a PC
+and keep your files, apps and settings. For example, it can take Windows 10 to Windows 11, or
+Windows 11 to a newer version, the same way a drive made with Rufus can:
+
+1. Create the drive as usual: select the Windows ISO and press **START**. If the PC doesn't
+   meet the Windows 11 requirements (for example, it has no TPM 2.0 or Secure Boot, or an
+   unsupported CPU), tick **Remove requirement for 4GB+ RAM, Secure Boot and TPM 2.0** in the
+   *Windows User Experience* dialog. Any file system works.
+2. On the PC you want to upgrade, start Windows as usual and plug in the drive. **Don't boot
+   from the drive**: that starts a clean install.
+3. Open the drive in File Explorer and double-click **setup.exe**. Click **Yes** when Windows asks
+   whether to allow it to make changes.
+4. Follow the prompts. On the **Ready to install** screen, check that it says **Keep personal
+   files and apps**. If it doesn't, click **Change what to keep** and choose that option.
+5. Leave the drive plugged in until the upgrade has finished. The PC restarts several times.
+
+Good to know:
+
+- The other options in the dialog (local account, privacy questions, regional settings,
+  BitLocker) only apply to clean installs from the drive. An upgrade keeps your existing
+  accounts and settings.
+- On Windows 11 24H2 and later, the requirement bypass uses the same small `setup.exe` wrapper
+  as Rufus. It is signed by the Rufus author. It sets the registry values that Windows Setup
+  checks on the running PC, then starts the original setup (`setup.dll`).
+- Microsoft doesn't support Windows 11 on PCs that don't meet its requirements, and such PCs
+  may not get every update.
+- If `setup.exe` shows the clean-install screens (*Install now*, or asks where to install
+  Windows), see [Troubleshooting](#troubleshooting).
 
 ### Linux notes
 
@@ -251,6 +309,12 @@ Not implemented: Windows To Go, FreeDOS, installing Syslinux/GRUB for *Linux* IS
 mode), and the built-in Windows ISO downloader (Fido). The **▾** menu next to SELECT links to the
 official download pages instead.
 
+Done differently: Rufus writes the requirement-bypass registry values directly into the registry
+inside `boot.wim`. Rufux uses the method Rufus falls back to when it can't do that (for example
+in its Microsoft Store version): the same values set by the answer file inside `boot.wim`. When
+a PC boots from the drive, a command prompt window flashes briefly as Windows Setup starts, and
+the first setup screens can look slightly different.
+
 Additions: verification of written data in both modes, compressed-image writing with progress,
 a checksum compare box, and a *Safely remove the drive when finished* option.
 
@@ -263,6 +327,14 @@ a checksum compare box, and a *Safely remove the drive when finished* option.
   box under *Show advanced drive properties*. Internal disks are never listed.
 - **"Could not unmount … the drive is in use"**: close any file manager window or terminal that
   has the drive open, then retry.
+- **Running `setup.exe` from Windows shows the clean-install screens instead of the upgrade**:
+  the drive was probably made by Rufux 1.0.1 or older with the requirement bypass ticked. Those
+  versions put `autounattend.xml` at the root of the drive, where Windows Setup finds it and
+  starts a clean install. Re-create the drive with the current version, or delete
+  `autounattend.xml` from the root of the drive before running `setup.exe`. Deleting it also
+  drops the requirement bypass for clean installs from that drive.
+- **"Removing the Windows 11 requirements … needs wimlib"**: install it (`wimlib` on Arch,
+  `wimtools` on Debian/Ubuntu/Mint/openSUSE, `wimlib-utils` on Fedora), then press START again.
 - The log window (📄 button) shows every command that was run. *Save* it when reporting a problem.
 
 ## Development
@@ -278,8 +350,9 @@ sudo make test    # runs everything, including real partition/format/copy tests 
 [virtme-ng](https://github.com/arighi/virtme-ng)) with 8 virtual USB sticks attached. It runs
 the helper against them with the real kernel file system drivers, then boots each resulting stick
 in QEMU with UEFI (OVMF) and legacy BIOS to check that the expected boot loader really starts.
-This covers Windows FAT32/NTFS/exFAT, GPT/MBR, UEFI:NTFS and BIOS boot through GRUB, hybrid DD
-images, and Linux ISO mode with label patching:
+This covers Windows FAT32/NTFS/exFAT, GPT/MBR, UEFI:NTFS and BIOS boot through GRUB, the
+in-place upgrade layout (answer file inside `boot.wim`, `setup.exe` wrapper), hybrid DD images,
+and Linux ISO mode with label patching:
 
 ```bash
 sudo tests/vm/run.sh    # uses the running kernel; set KERNEL=/path/to/vmlinuz to pick another
@@ -288,8 +361,8 @@ sudo tests/vm/run.sh    # uses the running kernel; set KERNEL=/path/to/vmlinuz t
 Code layout:
 
 - `rufux/core/`: Qt-free logic. The image reader (`isofs.py`), image analysis (`image.py`),
-  drive enumeration (`blockdevs.py`), file system rules (`fsdefs.py`), UI decisions (`plan.py`)
-  and the Windows answer file generator (`unattend.py`).
+  drive enumeration (`blockdevs.py`), file system rules (`fsdefs.py`), UI decisions (`plan.py`),
+  the Windows answer file generator (`unattend.py`) and the pinned Rufus files (`rufusfiles.py`).
 - `rufux/helper/`: the privileged helper. DD writing, ISO mode, partitioning, formatting, bad
   blocks, and saving a drive.
 - `rufux/ui/`: the Qt interface.
@@ -297,5 +370,9 @@ Code layout:
 ## License
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
-The UEFI:NTFS boot image is © Pete Batard and licensed under the GPLv2+. It is downloaded from the
-[Rufus repository](https://github.com/pbatard/rufus) when the package is built.
+Two components come from the [Rufus repository](https://github.com/pbatard/rufus) and are downloaded
+when the package is built, pinned to Rufus v4.15 and checked by SHA-256. Both are © Pete Batard:
+
+- the UEFI:NTFS boot image (GPLv2+);
+- the signed Windows 11 `setup.exe` wrapper (GPLv3+; its source is `res/setup/setup.c` in the
+  Rufus repository).

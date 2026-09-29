@@ -12,7 +12,7 @@ try:
 except ImportError as exc:  # no Qt binding installed
     pytest.skip(str(exc), allow_module_level=True)
 
-from conftest import have, make_fake_wim, run  # noqa: E402
+from conftest import have, make_fake_wim, needs, run  # noqa: E402
 from rufux.core import blockdevs, plan  # noqa: E402
 
 FAKE = blockdevs.Drive(name="sdz", path="/dev/sdz", size=32_010_928_128, model="Ultra", vendor="SanDisk",
@@ -142,3 +142,76 @@ def test_progress_bar_stays_within_bounds(window):
     assert w.progress.value() == 1000 and w.progress.format() == "Writing image: 100.0%"
     w._on_helper_progress("write", -5, 6_000_000_000, "")
     assert w.progress.value() == 0 and w.progress.format() == "Writing image: 0.0%"
+
+
+def test_wue_dialog_without_wimlib(app):
+    from rufux.ui.dialogs import WueDialog
+
+    settings = qt.QSettings()
+    settings.setValue("wue/bypass", True)
+    dlg = WueDialog(True, None, wimlib=False)
+    assert not dlg.bypass.isEnabled() and not dlg.bypass.isChecked()
+    assert not dlg.options().bypass_requirements
+    dlg._accept()
+    assert settings.value("wue/bypass", type=bool)  # the saved choice is kept for later
+    dlg = WueDialog(True, None, wimlib=True)
+    assert dlg.bypass.isEnabled() and dlg.bypass.isChecked() and dlg.options().bypass_requirements
+
+
+def test_setup_wrapper_lookup(window, monkeypatch):
+    from rufux.core import rufusfiles
+    from rufux.ui import main_window
+
+    w = window()
+    asked = []
+    monkeypatch.setattr(main_window, "ask", lambda *a, **k: asked.append(a) or False)
+    monkeypatch.setattr(rufusfiles, "find", lambda f: "/usr/share/rufux/" + f.name)
+    assert w._find_setup_wrapper("x64") == "/usr/share/rufux/setup_x64.exe" and not asked
+    # Not installed and the user declines the download: the drive is made without it.
+    monkeypatch.setattr(rufusfiles, "find", lambda f: None)
+    assert w._find_setup_wrapper("arm64") is None and len(asked) == 1
+
+
+@needs("genisoimage")
+def test_start_windows_11_24h2_job(window, tmp_path, monkeypatch):
+    from conftest import make_fake_pe
+    from rufux.core import rufusfiles
+    from rufux.ui import main_window
+
+    src = tmp_path / "win"
+    (src / "efi" / "boot").mkdir(parents=True)
+    (src / "sources").mkdir()
+    (src / "bootmgr").write_bytes(b"\0" * 512)
+    (src / "efi" / "boot" / "bootx64.efi").write_bytes(b"MZ" + b"\0" * 510)
+    (src / "sources" / "boot.wim").write_bytes(b"\0" * 4096)
+    (src / "setup.exe").write_bytes(make_fake_pe(0x8664))
+    make_fake_wim(str(src / "sources" / "install.wim"), build=26100)
+    iso = tmp_path / "Win11_24H2.iso"
+    run("genisoimage", "-quiet", "-udf", "-V", "CCCOMA_X64FRE_EN-US_DV9", "-o", str(iso), str(src))
+    qt.QSettings().setValue("wue/bypass", True)
+    w = window(str(iso))
+    w.tools.wimlib = True
+    monkeypatch.setattr(main_window.Tools, "detect", classmethod(lambda cls: w.tools))
+    jobs = []
+    monkeypatch.setattr(main_window, "dialog_accepted", lambda dlg: True)
+    monkeypatch.setattr(main_window, "ask", lambda *a, **k: True)
+    monkeypatch.setattr(rufusfiles, "find", lambda f: "/usr/share/rufux/" + f.name)
+    monkeypatch.setattr(w, "_launch", jobs.append)
+    w.on_start()
+    assert len(jobs) == 1
+    opts = jobs[0]["iso"]
+    assert opts["unattend_target"] == "bootwim" and opts["boot_wim"] == "sources/boot.wim"
+    assert "BypassTPMCheck" in opts["unattend"] and opts["bypass_appraiser"] is True
+    assert opts["setup_wrapper"] == "/usr/share/rufux/setup_x64.exe"
+
+
+def test_start_detects_newly_installed_tools(window, monkeypatch):
+    from rufux.ui import main_window
+
+    w = window()
+    fresh = plan.Tools(wimlib=True, grub_bios=True, fs=dict(w.tools.fs))
+    monkeypatch.setattr(main_window.Tools, "detect", classmethod(lambda cls: fresh))
+    errors = []
+    monkeypatch.setattr(main_window.QMessageBox, "critical", staticmethod(lambda *a, **k: errors.append(a)))
+    w.on_start()  # no image selected: stops with an error, after detecting the tools
+    assert w.tools is fresh and errors

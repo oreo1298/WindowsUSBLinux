@@ -19,14 +19,15 @@ def drive(size=32 * 1000 ** 3):
                  removable=True)
 
 
-def win11(big=True, esd=False):
+def win11(big=True, esd=False, build=26100):
     wim = "sources/install.esd" if esd else "sources/install.wim"
     info = ImageInfo(path="/tmp/Win11.iso", name="Win11.iso", size=6 * GiB, kind="iso",
                      label="CCCOMA_X64FRE_EN-US_DV9", fs_kind="udf", efi_bootable=True,
                      efi_archs=["x64"], has_bootmgr=True, is_windows=True, file_count=1000,
                      total_bytes=6 * GiB)
-    info.windows = WindowsInfo(product="Windows 11", build=26100, arch="x64", wim_path=wim,
-                               wim_size=5 * GiB if big else 3 * GiB)
+    info.windows = WindowsInfo(product="Windows 11", build=build, arch="x64", wim_path=wim,
+                               wim_size=5 * GiB if big else 3 * GiB, boot_wim="sources/boot.wim",
+                               setup_arch="x64")
     if big:
         info.big_files = [wim]
         info.largest_file, info.largest_size = wim, 5 * GiB
@@ -93,9 +94,49 @@ def test_windows_mbr_bios_with_grub_and_wue():
     sel.wue = WueOptions(bypass_requirements=True, local_account="me")
     job = plan.build_job(sel, t)
     assert job["iso"]["bios_grub"] is True
-    assert job["iso"]["unattend_target"] == "root"
+    assert job["iso"]["unattend_target"] == "bootwim"
+    assert job["iso"]["boot_wim"] == "sources/boot.wim"
     assert job["iso"]["bypass_appraiser"] is True
     assert "BypassTPMCheck" in job["iso"]["unattend"]
+
+
+def test_requirement_bypass_needs_wimlib_and_boot_wim():
+    sel = Selection(drive=drive(), image=win11(), mode="iso", scheme="gpt", fs="ntfs",
+                    uefi_ntfs="/usr/share/rufux/uefi-ntfs.img",
+                    wue=WueOptions(bypass_requirements=True))
+    plan.validate(sel, tools())
+    with pytest.raises(PlanError, match="wimlib"):
+        plan.validate(sel, tools(wimlib=False))
+    # Options that only apply after installation go to $OEM$ and need nothing extra.
+    sel.wue = WueOptions(no_online_account=True)
+    plan.validate(sel, tools(wimlib=False))
+    assert plan.build_job(sel, tools(wimlib=False))["iso"]["unattend_target"] == "oem"
+    sel.wue = WueOptions(bypass_requirements=True)
+    sel.image.windows.boot_wim = ""
+    with pytest.raises(PlanError, match="boot.wim"):
+        plan.validate(sel, tools())
+
+
+def test_setup_wrapper_for_24h2_upgrades():
+    sel = Selection(drive=drive(), image=win11(), mode="iso", scheme="gpt", fs="fat32",
+                    wue=WueOptions(bypass_requirements=True))
+    assert plan.setup_wrapper_arch(sel) == "x64"
+    assert "setup_wrapper" not in plan.build_job(sel, tools())["iso"]  # not located (yet)
+    sel.setup_wrapper = "/usr/share/rufux/setup_x64.exe"
+    assert plan.build_job(sel, tools())["iso"]["setup_wrapper"] == sel.setup_wrapper
+    assert any("setup.dll" in line for line in plan.summary(sel, tools()))
+    # Not without the bypass, not before 24H2, and not for a setup.exe we have no wrapper for.
+    sel.wue = WueOptions(no_online_account=True)
+    assert plan.setup_wrapper_arch(sel) is None
+    assert "setup_wrapper" not in plan.build_job(sel, tools())["iso"]
+    sel.wue = WueOptions(bypass_requirements=True)
+    sel.image = win11(build=22631)
+    assert plan.setup_wrapper_arch(sel) is None
+    sel.image = win11()
+    sel.image.windows.setup_arch = "x86"
+    assert plan.setup_wrapper_arch(sel) is None
+    sel.image.windows.setup_arch = "arm64"
+    assert plan.setup_wrapper_arch(sel) == "arm64"
 
 
 def test_hybrid_linux_prefers_dd():

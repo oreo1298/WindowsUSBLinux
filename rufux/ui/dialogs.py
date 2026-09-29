@@ -12,6 +12,7 @@ from .qt import (QCheckBox, QDesktopServices, QDialog, QDialogButtonBox, QFileDi
                  QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
+from ..core.distro import install_hint
 from ..core.unattend import WueOptions, sanitize_username, username_problem
 from ..core.util import human_size
 from .widgets import Task, app_icon
@@ -152,7 +153,7 @@ class ChecksumDialog(QDialog):
 class WueDialog(QDialog):
     """Rufus' 'Windows User Experience' dialog."""
 
-    def __init__(self, win11: bool, parent=None):
+    def __init__(self, win11: bool, parent=None, wimlib: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Windows User Experience")
         self.settings = QSettings()
@@ -172,6 +173,14 @@ class WueDialog(QDialog):
 
         self.bypass = box("Remove requirement for 4GB+ RAM, Secure Boot and TPM 2.0", "bypass", True)
         self.bypass.setVisible(win11)
+        if win11 and not wimlib:
+            # The setup part of the answer file goes into boot.wim, which needs wimlib.
+            self.bypass.setChecked(False)
+            self.bypass.setEnabled(False)
+            missing = QLabel(f"<small>Removing the requirements needs wimlib: <b>{install_hint('wimlib')}</b></small>")
+            missing.setWordWrap(True)
+            missing.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            lay.addWidget(missing)
         self.no_msa = box("Remove requirement for an online Microsoft account", "no_msa", True)
         row = QHBoxLayout()
         self.user = QCheckBox("Create a local account with username:")
@@ -203,7 +212,8 @@ class WueDialog(QDialog):
                 QMessageBox.warning(self, "Windows User Experience", problem)
                 return
         s = self.settings
-        s.setValue("wue/bypass", self.bypass.isChecked())
+        if self.bypass.isEnabled():  # keep the saved choice while wimlib is missing
+            s.setValue("wue/bypass", self.bypass.isChecked())
         s.setValue("wue/no_msa", self.no_msa.isChecked())
         s.setValue("wue/user", self.user.isChecked())
         s.setValue("wue/username", self.username.text())

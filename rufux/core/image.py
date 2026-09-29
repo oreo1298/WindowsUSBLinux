@@ -41,6 +41,18 @@ EFI_ARCH_FILES = {
     "bootloongarch64.efi": "loongarch64",
 }
 
+PE_MACHINES = {0x8664: "x64", 0xAA64: "arm64", 0x014C: "x86", 0x01C4: "arm"}
+
+
+def pe_arch(data: bytes) -> str:
+    """Architecture of a Windows executable, from the start of the file ('' if unknown)."""
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        return ""
+    off = struct.unpack_from("<I", data, 0x3C)[0]
+    if off + 6 > len(data) or data[off:off + 4] != b"PE\x00\x00":
+        return ""
+    return PE_MACHINES.get(struct.unpack_from("<H", data, off + 4)[0], "")
+
 
 @dataclass
 class WindowsInfo:
@@ -54,6 +66,8 @@ class WindowsInfo:
     wim_size: int = 0
     wim_is_esd: bool = False
     wim_images: int = 0
+    boot_wim: str = ""    # path of sources/boot.wim in the image ('' if missing)
+    setup_arch: str = ""  # architecture of the setup.exe at the root of the image
 
     @property
     def is_win11(self) -> bool:
@@ -559,6 +573,8 @@ def _analyze_iso(info: ImageInfo) -> None:
             info.is_windows = True
             info.windows = WindowsInfo(product="Windows (split image)", wim_path="sources/install.swm",
                                        wim_size=paths["sources/install.swm"])
+        if info.windows is not None:
+            _windows_setup_files(img, paths, info.windows)
 
         info.distro = _guess_distro(img, info, paths, dirs)
         if "casper" in dirs and not info.is_windows:
@@ -566,6 +582,18 @@ def _analyze_iso(info: ImageInfo) -> None:
         elif "live" in dirs and not info.is_windows and any(
                 p.startswith("live/") and ("vmlinuz" in p or p.endswith(".squashfs")) for p in paths):
             info.persistence = "live"
+
+
+def _windows_setup_files(img: ImageFS, paths: dict[str, int], wi: WindowsInfo) -> None:
+    """Locate boot.wim (where the answer file goes) and identify setup.exe's architecture."""
+    if "sources/boot.wim" in paths:
+        entry = img.lookup("sources/boot.wim")
+        wi.boot_wim = entry.path if entry else "sources/boot.wim"
+    if "setup.exe" in paths:
+        try:
+            wi.setup_arch = pe_arch(img.read("setup.exe", 4096))
+        except (IsoError, struct.error):
+            wi.setup_arch = ""
 
 
 def _guess_distro(img: ImageFS, info: ImageInfo, paths: dict[str, int], dirs: set[str]) -> str:

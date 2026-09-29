@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from conftest import make_fake_wim, needs, run
+from conftest import make_fake_pe, make_fake_wim, needs, run
 from rufux.core import image as image_mod
 from rufux.core.isofs import ImageFS
 from rufux.core.wim import read_wim_file
@@ -141,6 +141,7 @@ def test_windows_detection(tmp_path):
     (src / "efi" / "boot" / "bootx64.efi").write_bytes(b"MZ" + b"\x00" * 1000)
     (src / "efi" / "microsoft" / "boot" / "bcd").write_bytes(b"regf" + b"\x00" * 1000)
     (src / "sources" / "boot.wim").write_bytes(b"\x00" * 5000)
+    (src / "setup.exe").write_bytes(make_fake_pe(0xAA64))
     make_fake_wim(str(src / "sources" / "install.wim"), build=26100, arch=9, images=3, pad=10000)
     iso = tmp_path / "win.iso"
     run("genisoimage", "-quiet", "-udf", "-V", "CCCOMA_X64FRE_EN-US_DV9", "-o", str(iso), str(src))
@@ -155,6 +156,8 @@ def test_windows_detection(tmp_path):
     assert info.windows.wim_images == 3
     assert info.windows.is_win11 and info.windows.supports_wue
     assert info.windows.languages == ["en-US"]
+    assert info.windows.boot_wim == "sources/boot.wim"
+    assert info.windows.setup_arch == "arm64"
     assert info.recommended_mode == "iso"
     assert not info.can_dd_mode
     assert info.label == "CCCOMA_X64FRE_EN-US_DV9"
@@ -171,6 +174,16 @@ def test_wim_parser(tmp_path):
     make_fake_wim(str(p), build=26100, arch=12, installation_type="Server")
     w = read_wim_file(str(p))
     assert w.is_server and w.product == "Windows Server 2025" and w.arch == "arm64"
+
+
+def test_boot_wim_setup_index():
+    from rufux.core.wim import WimInfo
+
+    assert WimInfo(2, 1, 1, 2, []).setup_index == 2   # Microsoft media: boot index 2
+    assert WimInfo(2, 1, 1, 0, []).setup_index == 2   # no boot index: Rufus uses 2
+    assert WimInfo(1, 1, 1, 0, []).setup_index == 1   # single-image boot.wim
+    assert WimInfo(3, 1, 1, 3, []).setup_index == 3
+    assert WimInfo(2, 1, 1, 7, []).setup_index == 2   # invalid boot index
 
 
 def _make_disk_image(path, size=8 * 1024 * 1024):

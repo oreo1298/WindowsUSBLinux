@@ -23,6 +23,37 @@ def run(*args, **kw):
     return subprocess.run(list(args), check=True, capture_output=True, **kw)
 
 
+def make_fake_pe(machine: int = 0x8664, size: int = 4000) -> bytes:
+    """Bytes that look like a Windows executable for the given machine type."""
+    pe_offset = 0x100
+    data = bytearray(os.urandom(size))
+    data[0:2] = b"MZ"
+    struct.pack_into("<I", data, 0x3C, pe_offset)
+    data[pe_offset:pe_offset + 4] = b"PE\x00\x00"
+    struct.pack_into("<H", data, pe_offset + 4, machine)
+    return bytes(data)
+
+
+def make_boot_wim(path: str, workdir: str) -> None:
+    """A two-image boot.wim like Microsoft's: 1 = Windows PE, 2 = Windows Setup (bootable)."""
+    pe = os.path.join(workdir, "bootwim-pe")
+    setup = os.path.join(workdir, "bootwim-setup")
+    os.makedirs(os.path.join(pe, "Windows", "System32"))
+    os.makedirs(os.path.join(setup, "sources"))
+    with open(os.path.join(pe, "Windows", "System32", "winpeshl.ini"), "w") as f:
+        f.write("[LaunchApps]\n")
+    with open(os.path.join(setup, "setup.exe"), "wb") as f:
+        f.write(make_fake_pe())
+    with open(os.path.join(setup, "sources", "setup.exe"), "wb") as f:
+        f.write(make_fake_pe())
+    run("wimlib-imagex", "capture", pe, path, "Microsoft Windows PE (amd64)", "--compress=LZX")
+    run("wimlib-imagex", "append", setup, path, "Microsoft Windows Setup (amd64)", "--boot")
+
+
+def wim_listing(path: str, index: int) -> list[str]:
+    return run("wimlib-imagex", "dir", path, str(index)).stdout.decode().splitlines()
+
+
 def make_fake_wim(path: str, build: int = 26100, arch: int = 9, images: int = 2,
                   installation_type: str = "Client", pad: int = 0) -> None:
     """Write a minimal WIM file with a valid header and XML metadata."""

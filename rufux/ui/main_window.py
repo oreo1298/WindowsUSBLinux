@@ -10,7 +10,7 @@ from .qt import (QAction, QApplication, QCheckBox, QComboBox, QElapsedTimer, QFi
                  QSpinBox, QStyle, Qt, QTimer, QToolButton, QVBoxLayout, QWidget, dialog_accepted)
 
 from .. import APP_NAME, HELPER_PROTOCOL, __version__
-from ..core import blockdevs, image, plan, uefintfs
+from ..core import blockdevs, image, plan, rufusfiles, uefintfs
 from ..core.distro import install_hint, package_names
 from ..core.fsdefs import FILESYSTEMS, cluster_label, cluster_sizes
 from ..core.plan import BOOT_IMAGE, BOOT_NONE, MODE_DD, MODE_ISO, PlanError, Selection, Tools
@@ -671,6 +671,7 @@ class MainWindow(QMainWindow):
     def on_start(self) -> None:
         if self.busy:
             return
+        self.tools = Tools.detect()  # something may have been installed (e.g. wimlib) since startup
         self._sync_selection()
         self._save_settings()
         sel = self.sel
@@ -678,6 +679,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, APP_NAME, "Please select a device.")
             return
         # Report blocking problems before asking anything else.
+        sel.wue = plan.WueOptions()
+        sel.regional = None
+        sel.setup_wrapper = None
         sel.uefi_ntfs = "(to be located)" if plan.needs_uefi_ntfs(sel) else None
         try:
             plan.validate(sel, self.tools)
@@ -692,15 +696,16 @@ class MainWindow(QMainWindow):
         else:
             sel.uefi_ntfs = None
         info = sel.image if sel.boot == BOOT_IMAGE else None
-        sel.wue = plan.WueOptions()
-        sel.regional = None
         if info is not None and sel.mode == MODE_ISO and info.windows is not None and info.windows.supports_wue:
-            dlg = WueDialog(info.windows.is_win11, self)
+            dlg = WueDialog(info.windows.is_win11, self, wimlib=self.tools.wimlib)
             if not dialog_accepted(dlg):
                 return
             sel.wue = dlg.options()
             if sel.wue.duplicate_locale:
                 sel.regional = detect_regional_settings(info.windows.languages)
+        wrapper_arch = plan.setup_wrapper_arch(sel)
+        if wrapper_arch:
+            sel.setup_wrapper = self._find_setup_wrapper(wrapper_arch)
         try:
             warnings = plan.validate(sel, self.tools)
         except PlanError as exc:
@@ -736,11 +741,33 @@ class MainWindow(QMainWindow):
                    f"It is normally installed with the {APP_NAME} package. Download it now from GitHub "
                    f"(pbatard/rufus {uefintfs.RUFUS_VERSION}, verified by checksum)?"):
             return None
-        dlg = QProgressDialog("Downloading UEFI:NTFS...", "Cancel", 0, 100, self)
+        return self._download_rufus_file(rufusfiles.UEFI_NTFS, "Downloading UEFI:NTFS...")
+
+    def _find_setup_wrapper(self, arch: str) -> str | None:
+        """Rufus' setup.exe wrapper for in-place upgrades (Windows 11 24H2+), or None to go without."""
+        f = rufusfiles.SETUP_WRAPPERS[arch]
+        path = rufusfiles.find(f)
+        if path is None and ask(
+                self, APP_NAME,
+                "For in-place upgrades on PCs that don't meet the Windows 11 requirements, Rufus replaces "
+                "setup.exe with a small wrapper that removes the requirement checks before starting the "
+                "original setup. Rufux adds the same wrapper.",
+                QMessageBox.Icon.Question,
+                f"It is normally installed with the {APP_NAME} package. Download it now from GitHub "
+                f"(pbatard/rufus {rufusfiles.RUFUS_VERSION}, verified by checksum)?\n\n"
+                "If you cancel, the drive is still created, but upgrading an unsupported PC from it will "
+                "stop at the requirements check."):
+            path = self._download_rufus_file(f, "Downloading the setup wrapper...")
+        if path is None:
+            self.log("The in-place upgrade wrapper for setup.exe will not be added")
+        return path
+
+    def _download_rufus_file(self, f: rufusfiles.RufusFile, label: str) -> str | None:
+        dlg = QProgressDialog(label, "Cancel", 0, 100, self)
         dlg.setWindowModality(Qt.WindowModality.WindowModal)
         dlg.setAutoReset(False)
         dlg.setMinimumDuration(0)
-        task = Task(lambda t: uefintfs.download(t.report), self)
+        task = Task(lambda t: rufusfiles.download(f, t.report), self)
         task.percent.connect(dlg.setValue)
         task.finished.connect(dlg.accept)
         task.start()
@@ -751,7 +778,7 @@ class MainWindow(QMainWindow):
             return None
         path = task.result if isinstance(task.result, str) else None
         if path:
-            self.log(f"Downloaded UEFI:NTFS to {path}")
+            self.log(f"Downloaded {f.name} to {path}")
         return path
 
     def _on_save_drive(self) -> None:

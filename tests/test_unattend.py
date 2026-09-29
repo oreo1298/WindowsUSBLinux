@@ -15,9 +15,11 @@ def test_nothing_selected():
     assert build_unattend(WueOptions()) is None
 
 
-def test_bypass_goes_to_windows_pe_and_root():
+def test_bypass_goes_to_windows_pe_inside_boot_wim():
+    # Never to the root of the drive: setup.exe run from Windows would pick it up there
+    # and start a clean install instead of an in-place upgrade.
     xml, target = build_unattend(WueOptions(bypass_requirements=True), "x64")
-    assert target == "root"
+    assert target == "bootwim"
     p = passes(xml)
     assert set(p) == {"windowsPE"}
     comp = p["windowsPE"].find("u:component", NS)

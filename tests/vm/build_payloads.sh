@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the test images used by run.sh into the directory given as $1:
 #   marker.efi  - GRUB EFI program printing RUFUX-UEFI-OK on the serial port
-#   win.iso     - Windows-like UDF ISO (bootmgr stand-in, EFI loader, real install.wim)
+#   win.iso     - Windows-like UDF ISO (bootmgr stand-in, EFI loader, real boot.wim and install.wim)
 #   hybrid.iso  - ISOHybrid GRUB image (BIOS + UEFI) printing RUFUX-DD-OK
 #   live.iso    - Linux-like ISO whose boot config searches for its own volume label
 set -euo pipefail
@@ -21,14 +21,20 @@ grub-mkstandalone -O x86_64-efi -o marker.efi --modules="serial terminal echo sl
     "boot/grub/grub.cfg=marker.cfg"
 nasm -f bin -o bootmgr "$HERE/bootmgr.asm"
 
-rm -rf win wimsrc && mkdir -p win/efi/boot win/efi/microsoft/boot win/sources wimsrc/Windows
+rm -rf win wimsrc bootpe bootsetup && mkdir -p win/efi/boot win/efi/microsoft/boot win/sources wimsrc/Windows
 cp bootmgr win/bootmgr
 cp marker.efi win/bootmgr.efi
 cp marker.efi win/efi/boot/bootx64.efi
 head -c 20000 /dev/urandom > win/efi/microsoft/boot/bcd
-head -c 400000 /dev/urandom > win/sources/boot.wim
 head -c 30000 /dev/urandom > win/sources/appraiserres.dll
-head -c 70000 /dev/urandom > win/setup.exe
+# setup.exe: just enough of an x64 PE header for Rufux to identify it
+python3 -c "import os, struct, sys; d = bytearray(os.urandom(70000)); d[:2] = b'MZ'; struct.pack_into('<I', d, 0x3C, 0x100); d[0x100:0x106] = b'PE\0\0' + struct.pack('<H', 0x8664); sys.stdout.buffer.write(d)" > win/setup.exe
+# boot.wim like Microsoft's: image 1 = Windows PE, image 2 = Windows Setup (the boot image)
+mkdir -p bootpe/Windows/System32 bootsetup/sources
+head -c 300000 /dev/urandom > bootpe/Windows/System32/winpe.bin
+cp win/setup.exe bootsetup/setup.exe
+wimlib-imagex capture bootpe win/sources/boot.wim "Microsoft Windows PE (amd64)" --compress=LZX >/dev/null
+wimlib-imagex append bootsetup win/sources/boot.wim "Microsoft Windows Setup (amd64)" --boot >/dev/null
 head -c 40000000 /dev/urandom > wimsrc/Windows/data.bin
 wimlib-imagex capture wimsrc win/sources/install.wim "Windows 11 Pro" --compress=none >/dev/null
 "$MKISOFS" -quiet -udf -iso-level 3 -V CCCOMA_X64FRE_EN-US_DV9 -o win.iso win
@@ -51,12 +57,14 @@ printf 'title Live\nlinux /casper/vmlinuz\noptions boot=casper archisosearchuuid
 head -c 100000 /dev/urandom > live/casper/vmlinuz
 xorriso -as mkisofs -R -J -V RUFUX_LIVE_2026_TEST -o live.iso live >/dev/null 2>&1
 
-if [ ! -f uefi-ntfs.img ]; then
-    if [ -f /usr/share/rufux/uefi-ntfs.img ]; then
-        cp /usr/share/rufux/uefi-ntfs.img .
-    else
-        python3 -c "import sys; sys.path.insert(0, '$HERE/../..'); from rufux.core import uefintfs; import shutil; shutil.copy(uefintfs.download(), 'uefi-ntfs.img')"
-    fi
-fi
-rm -rf win wimsrc hyb live
-ls -la "$WORK"/*.iso "$WORK"/uefi-ntfs.img
+# The real files from the Rufus release (installed copies, or downloaded and checked)
+python3 - "$HERE/../.." <<'PY'
+import os, shutil, sys
+sys.path.insert(0, sys.argv[1])
+from rufux.core import rufusfiles as r
+for f in (r.UEFI_NTFS, r.SETUP_WRAPPERS["x64"]):
+    if not os.path.isfile(f.name):
+        shutil.copy(r.find(f) or r.download(f), f.name)
+PY
+rm -rf win wimsrc bootpe bootsetup hyb live
+ls -la "$WORK"/*.iso "$WORK"/uefi-ntfs.img "$WORK"/setup_x64.exe

@@ -18,6 +18,7 @@ from rufux.core import blockdevs  # noqa: E402
 from rufux.core.unattend import WueOptions, build_unattend  # noqa: E402
 
 UEFI_NTFS = os.path.join(VM, "uefi-ntfs.img")
+SETUP_WRAPPER = os.path.join(VM, "setup_x64.exe")
 MiB = 1024 * 1024
 results = []
 
@@ -81,7 +82,8 @@ def main():
         ("A-win-fat32-gpt", 1000, {"mode": "iso", "image": win, "filesystem": "fat32", "scheme": "gpt",
                                    "label": "CCCOMA_X64FRE_EN-US_DV9",
                                    "iso": {"iso_label": "CCCOMA_X64FRE_EN-US_DV9", "split_wim": "sources/install.wim",
-                                           "unattend": xml, "unattend_target": target, "bypass_appraiser": True,
+                                           "unattend": xml, "unattend_target": target, "boot_wim": "sources/boot.wim",
+                                           "bypass_appraiser": True, "setup_wrapper": SETUP_WRAPPER,
                                            "patch_labels": False}}),
         ("B-win-ntfs-gpt", 1016, {"mode": "iso", "image": win, "filesystem": "ntfs", "scheme": "gpt",
                                   "label": "CCCOMA_X64FRE_EN-US_DV9", "uefi_ntfs": UEFI_NTFS,
@@ -161,10 +163,17 @@ def check_case(name, d):
         ok = mount(p1, "vfat", mp)
         try:
             names = {n.lower() for n in os.listdir(os.path.join(mp, "sources"))}
-            unattend = os.path.exists(os.path.join(mp, "autounattend.xml"))
+            root = {n.lower() for n in os.listdir(mp)}
+            listing = sh("wimlib-imagex", "dir", os.path.join(mp, "sources", "boot.wim"), "2").stdout.splitlines()
+            in_boot_wim = "/Autounattend.xml" in listing
             appr = os.path.getsize(os.path.join(mp, "sources", "appraiserres.dll")) == 0
-            good = ok and "install.swm" in names and "install.wim" not in names and unattend and appr
-            record("A-contents", good, f"sources={sorted(names)} unattend={unattend} appraiser_empty={appr}")
+            wrapped = (open(os.path.join(mp, "setup.exe"), "rb").read() == open(SETUP_WRAPPER, "rb").read()
+                       and "setup.dll" in root)
+            good = (ok and "install.swm" in names and "install.wim" not in names and appr
+                    and "autounattend.xml" not in root and in_boot_wim and wrapped)
+            record("A-contents", good, f"sources={sorted(names)} answer_file_in_boot_wim={in_boot_wim} "
+                                       f"root_answer_file={'autounattend.xml' in root} "
+                                       f"appraiser_empty={appr} setup_wrapped={wrapped}")
         finally:
             umount(mp)
     if name.startswith(("B", "D", "E")):

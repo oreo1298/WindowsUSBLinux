@@ -15,10 +15,11 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
-from ..core.image import FAT32_MAX_FILE
+from ..core.image import FAT32_MAX_FILE, pe_arch
 from ..core.isofs import Entry, ImageFS, IsoError
 from ..core.distro import install_hint
 from ..core.util import GRUB_I386_DIRS, human_size
+from ..core.wim import WimError, read_wim_file
 from .context import Context, HelperError, syncfs
 from .formatting import mounted
 
@@ -39,8 +40,10 @@ class IsoJob:
     split_wim: str = ""  # path inside the ISO of the WIM to split ('' = no split)
     bios_grub: bool = False
     unattend: str | None = None
-    unattend_target: str = "root"  # root | oem
+    unattend_target: str = "bootwim"  # bootwim | oem (see core.unattend.build_unattend)
+    boot_wim: str = "sources/boot.wim"
     bypass_appraiser: bool = False
+    setup_wrapper: tuple[str, bytes] | None = None  # (arch, data) of Rufus' setup.exe wrapper
     patch_labels: bool = True
     persistence: str | None = None  # casper | live
     extended_label: bool = True
@@ -82,9 +85,11 @@ def populate(ctx: Context, job: IsoJob, img: ImageFS, part_dev: str, disk_dev: s
         if split_entry is not None:
             _split_wim(ctx, img, split_entry, image_fd, mnt, copy_total, grand_total)
         if job.unattend:
-            _write_unattend(ctx, mnt, job)
+            _write_unattend(ctx, mnt, job, hashes)
         if job.bypass_appraiser:
             _bypass_appraiser(ctx, mnt, hashes)
+        if job.setup_wrapper:
+            _wrap_setup(ctx, mnt, job.setup_wrapper, hashes)
         if job.persistence == "live" and not transforms:
             ctx.log("Warning: no boot configuration file could be patched for persistence")
         if job.extended_label:
@@ -292,18 +297,95 @@ def _pick_temp_dir(size: int) -> str:
                       f"({human_size(size)} needed). Use NTFS instead of FAT32.")
 
 
-def _write_unattend(ctx: Context, mnt: str, job: IsoJob) -> None:
+def _write_unattend(ctx: Context, mnt: str, job: IsoJob, hashes: dict[str, str]) -> None:
     data = (job.unattend or "").encode("utf-8")
-    if job.unattend_target == "oem":
-        # No windowsPE settings: Setup copies $OEM$\$$ into %WINDIR% (Rufus does the same).
-        target = os.path.join(_mkdirs_ci(mnt, ["sources", "$OEM$", "$$", "Panther"]), "unattend.xml")
-    else:
-        target = os.path.join(mnt, "autounattend.xml")
-    with open(target, "wb") as f:
+    if job.unattend_target != "oem":
+        _add_to_boot_wim(ctx, mnt, job.boot_wim, data, hashes)
+        return
+    # No windowsPE settings: Setup copies $OEM$\$$ into %WINDIR% (Rufus does the same).
+    target = os.path.join(_mkdirs_ci(mnt, ["sources", "$OEM$", "$$", "Panther"]), "unattend.xml")
+    _write_file(target, data)
+    hashes[_rel(target, mnt)] = hashlib.sha256(data).hexdigest()
+    ctx.log(f"Created '{_rel(target, mnt)}' (Windows User Experience options)")
+
+
+def _add_to_boot_wim(ctx: Context, mnt: str, boot_wim: str, data: bytes, hashes: dict[str, str]) -> None:
+    """Store the answer file as \\Autounattend.xml in the setup image of boot.wim, as Rufus does.
+
+    Windows PE finds it there when the PC boots from the drive (and copies it to
+    %WINDIR%\\Panther for the later passes).  setup.exe started from within Windows for
+    an in-place upgrade does not look inside boot.wim, whereas an Autounattend.xml at
+    the root of the drive would make it run a clean install instead of the upgrade.
+    """
+    wimlib = ctx.tool("wimlib-imagex", package="wimlib")
+    path = _find_ci(mnt, [p for p in boot_wim.split("/") if p])
+    if path is None:
+        raise HelperError(f"'{boot_wim}' is missing on the drive")
+    try:
+        index = read_wim_file(path).setup_index
+    except (OSError, WimError) as exc:
+        raise HelperError(f"Cannot read '{boot_wim}': {exc}") from exc
+    ctx.status("Adding the Windows setup options to boot.wim...")
+    src = os.path.join(ctx.make_temp_dir("unattend-"), "Autounattend.xml")
+    try:
+        _write_file(src, data)
+        ctx.run([wimlib, "update", path, str(index), f'--command=add "{src}" /Autounattend.xml'],
+                timeout=1800)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(src)
+    syncfs(mnt)
+    rel = _rel(path, mnt)
+    hashes[rel] = _sha256_file(path)
+    ctx.log(f"Added 'Autounattend.xml' to image {index} of '{rel}' (Windows User Experience options; "
+            "they apply when booting from the drive, not to in-place upgrades)")
+
+
+def _wrap_setup(ctx: Context, mnt: str, wrapper: tuple[str, bytes], hashes: dict[str, str]) -> None:
+    """Rufus' in-place upgrade bypass for Windows 11 24H2+: setup.exe becomes setup.dll and
+    Rufus' signed wrapper takes its place.  The wrapper sets the registry values Windows
+    Setup checks on the running system, then starts setup.dll with the same arguments."""
+    arch, data = wrapper
+    exe = _find_ci(mnt, ["setup.exe"])
+    if exe is None or _find_ci(mnt, ["setup.dll"]) is not None:
+        ctx.log("Note: the in-place upgrade wrapper was not added (no setup.exe, or setup.dll already exists)")
+        return
+    with open(exe, "rb") as f:
+        exe_arch = pe_arch(f.read(4096))
+    if exe_arch != arch:
+        ctx.log(f"Note: setup.exe is for {exe_arch or 'an unknown architecture'}, not {arch}: "
+                "the in-place upgrade wrapper was not added")
+        return
+    dll = os.path.join(os.path.dirname(exe), "setup.dll")
+    os.rename(exe, dll)
+    _write_file(exe, data)
+    rel_exe, rel_dll = _rel(exe, mnt), _rel(dll, mnt)
+    if rel_exe in hashes:
+        hashes[rel_dll] = hashes[rel_exe]
+    hashes[rel_exe] = hashlib.sha256(data).hexdigest()
+    ctx.log(f"Renamed '{rel_exe}' to '{rel_dll}' and added Rufus' setup.exe wrapper ({arch}), so that "
+            "in-place upgrades also work on PCs that don't meet the Windows 11 requirements")
+
+
+def _write_file(path: str, data: bytes) -> None:
+    with open(path, "wb") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
-    ctx.log(f"Created '{os.path.relpath(target, mnt)}' (Windows User Experience options)")
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(4 * MiB)
+            if not chunk:
+                return h.hexdigest()
+            h.update(chunk)
+
+
+def _rel(path: str, root: str) -> str:
+    return os.path.relpath(path, root).replace(os.sep, "/")
 
 
 def _find_ci(root: str, parts: list[str]) -> str | None:
@@ -340,8 +422,7 @@ def _bypass_appraiser(ctx: Context, mnt: str, hashes: dict[str, str]) -> None:
     backup = os.path.join(sources, "appraiserres.bak")
     os.replace(dll, backup)
     open(dll, "wb").close()
-    rel_dll = os.path.relpath(dll, mnt).replace(os.sep, "/")
-    rel_bak = os.path.relpath(backup, mnt).replace(os.sep, "/")
+    rel_dll, rel_bak = _rel(dll, mnt), _rel(backup, mnt)
     if rel_dll in hashes:
         hashes[rel_bak] = hashes[rel_dll]
     hashes[rel_dll] = hashlib.sha256(b"").hexdigest()

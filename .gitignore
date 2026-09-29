@@ -10,3 +10,6 @@ __pycache__/
 *.pkg.tar.*
 *.log
 /uefi-ntfs.img
+/setup_x64.exe
+/setup_arm64.exe
+*.part

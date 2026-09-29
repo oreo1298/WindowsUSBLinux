@@ -137,15 +137,28 @@ def _component(name: str, arch: str, body: str) -> str:
             f"{body}    </component>\n")
 
 
+def needs_windows_pe(opts: WueOptions) -> bool:
+    """Whether the answer file has a windowsPE pass (and so must go into boot.wim)."""
+    return opts.bypass_requirements
+
+
 def build_unattend(opts: WueOptions, arch: str = "amd64",
                    regional: RegionalSettings | None = None) -> tuple[str, str] | None:
-    """Return (xml, placement) where placement is 'root' (autounattend.xml) or 'oem'."""
+    """Return (xml, placement).
+
+    Placement is where the helper stores the answer file, following Rufus:
+    'bootwim' adds it as \\Autounattend.xml to the setup image inside sources/boot.wim,
+    so it only applies when the PC boots from the drive; running setup.exe from within
+    Windows for an in-place upgrade never sees it (an Autounattend.xml at the root of
+    the drive would turn the upgrade into a clean install).  'oem' is used when there
+    is no windowsPE pass: sources/$OEM$/$$/Panther/unattend.xml.
+    """
     if not opts.any():
         return None
     arch = {"x64": "amd64", "x86": "x86", "arm64": "arm64", "arm": "arm"}.get(arch, arch) or "amd64"
     parts = ['<?xml version="1.0" encoding="utf-8"?>\n',
              '<unattend xmlns="urn:schemas-microsoft-com:unattend">\n']
-    has_pe = opts.bypass_requirements
+    has_pe = needs_windows_pe(opts)
     if has_pe:
         body = ("      <UserData>\n"
                 "        <AcceptEula>true</AcceptEula>\n"
@@ -236,7 +249,7 @@ def build_unattend(opts: WueOptions, arch: str = "amd64",
         parts.extend(oobe)
         parts.append("  </settings>\n")
     parts.append("</unattend>\n")
-    return "".join(parts), ("root" if has_pe else "oem")
+    return "".join(parts), ("bootwim" if has_pe else "oem")
 
 
 def describe(opts: WueOptions) -> list[str]:

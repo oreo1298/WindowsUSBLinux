@@ -5,6 +5,7 @@ skipped automatically elsewhere.  File systems the running kernel cannot mount
 are mounted through FUSE drivers (fusefat, ntfs-3g) when available.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -328,7 +329,7 @@ def test_format_ntfs_with_extended_label(loop, fuse_mount):
 
 
 def make_windows_iso(tmp_path, wim_mib=24):
-    from conftest import make_fake_wim
+    from conftest import make_boot_wim, make_fake_pe, make_fake_wim
 
     src = tmp_path / "winsrc"
     for d in ("efi/boot", "efi/microsoft/boot", "sources", "boot", "support"):
@@ -337,9 +338,12 @@ def make_windows_iso(tmp_path, wim_mib=24):
     (src / "bootmgr.efi").write_bytes(b"MZ" + os.urandom(4000))
     (src / "efi" / "boot" / "bootx64.efi").write_bytes(b"MZ" + os.urandom(8000))
     (src / "efi" / "microsoft" / "boot" / "bcd").write_bytes(b"regf" + os.urandom(1000))
-    (src / "sources" / "boot.wim").write_bytes(os.urandom(300000))
+    if have("wimlib-imagex"):
+        make_boot_wim(str(src / "sources" / "boot.wim"), str(tmp_path))
+    else:
+        (src / "sources" / "boot.wim").write_bytes(os.urandom(300000))
     (src / "sources" / "appraiserres.dll").write_bytes(os.urandom(5000))
-    (src / "setup.exe").write_bytes(b"MZ" + os.urandom(2000))
+    (src / "setup.exe").write_bytes(make_fake_pe(0x8664))
     (src / "autorun.inf").write_text("[AutoRun.Amd64]\nopen=setup.exe\n")
     wim_src = tmp_path / "wimdata"
     wim_src.mkdir()
@@ -361,21 +365,52 @@ UNATTEND = ('<?xml version="1.0" encoding="utf-8"?>\n<unattend xmlns="urn:schema
             '<settings pass="windowsPE"></settings></unattend>\n')
 
 
+def fake_setup_wrapper(tmp_path, monkeypatch) -> tuple[str, bytes]:
+    """A stand-in for Rufus' setup_x64.exe, accepted by the helper's checksum check."""
+    from conftest import make_fake_pe
+    from rufux.core import rufusfiles
+
+    data = make_fake_pe(0x8664, 3000)
+    path = tmp_path / "setup_x64.exe"
+    path.write_bytes(data)
+    monkeypatch.setitem(rufusfiles.SETUP_WRAPPERS, "x64", rufusfiles.RufusFile(
+        "setup_x64.exe", "setup/setup_x64.exe", hashlib.sha256(data).hexdigest(), len(data)))
+    return str(path), data
+
+
+def assert_upgrade_ready(mp: str, src, wrapper: bytes | None) -> None:
+    """What makes a drive usable for an in-place upgrade (running setup.exe from Windows)."""
+    from conftest import wim_listing
+
+    assert "autounattend.xml" not in {n.lower() for n in os.listdir(mp)}
+    boot_wim = os.path.join(mp, "sources", "boot.wim")
+    assert "/Autounattend.xml" in wim_listing(boot_wim, 2)
+    assert "/Autounattend.xml" not in wim_listing(boot_wim, 1)
+    xml = run("wimlib-imagex", "extract", boot_wim, "2", "/Autounattend.xml", "--to-stdout").stdout
+    assert xml.decode() == UNATTEND
+    if wrapper is not None:
+        assert open(os.path.join(mp, "setup.exe"), "rb").read() == wrapper
+        assert open(os.path.join(mp, "setup.dll"), "rb").read() == (src / "setup.exe").read_bytes()
+
+
 @needs("genisoimage", "wimlib-imagex", "mkfs.fat", "fusefat")
 def test_iso_windows_fat32_split(loop, tmp_path, fuse_mount, monkeypatch):
     monkeypatch.setattr(isomode, "SPLIT_SIZE_MIB", 10)
     iso, src = make_windows_iso(tmp_path)
+    wrapper_path, wrapper = fake_setup_wrapper(tmp_path, monkeypatch)
     lp = loop(256 * MiB)
     job = {"mode": "iso", "device": lp.spec(), "image": str(iso), "filesystem": "fat32",
            "scheme": "gpt", "label": "CCCOMA_X64FRE_EN-US_DV9", "verify": True,
            "extended_label": True,
            "iso": {"iso_label": "CCCOMA_X64FRE_EN-US_DV9", "split_wim": "sources/install.wim",
-                   "unattend": UNATTEND, "unattend_target": "root", "bypass_appraiser": True}}
+                   "unattend": UNATTEND, "unattend_target": "bootwim", "boot_wim": "sources/boot.wim",
+                   "bypass_appraiser": True, "setup_wrapper": wrapper_path}}
     ok, msg, events = run_job(job)
     assert ok, msg + "\n" + logs(events)
     text = logs(events)
     assert "Verification successful" in text
     assert "successfully verified" in text or "Verifying the split" in text
+    assert "Added 'Autounattend.xml' to image 2 of 'sources/boot.wim'" in text
     pt = sfdisk_json(lp.path)
     assert pt["label"] == "gpt"
     assert pt["partitions"][0]["type"].upper() == "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
@@ -387,7 +422,7 @@ def test_iso_windows_fat32_split(loop, tmp_path, fuse_mount, monkeypatch):
     assert {"install.swm", "install2.swm", "install3.swm"} <= names
     assert os.path.getsize(os.path.join(mp, "sources", "appraiserres.dll")) == 0
     assert "appraiserres.bak" in names
-    assert open(os.path.join(mp, "autounattend.xml")).read() == UNATTEND
+    assert_upgrade_ready(mp, src, wrapper)
     # the image's own autorun.inf must be kept
     assert "setup.exe" in open(os.path.join(mp, "autorun.inf")).read()
     with open(os.path.join(mp, "efi", "boot", "bootx64.efi"), "rb") as f:
@@ -429,6 +464,45 @@ def test_iso_windows_ntfs_uefi_ntfs(loop, tmp_path, fuse_mount):
         (src / "sources" / "install.wim").stat().st_size
     assert os.path.exists(os.path.join(mp, "sources", "$OEM$", "$$", "Panther", "unattend.xml"))
     assert not os.path.exists(os.path.join(mp, "autounattend.xml"))
+    with open(os.path.join(mp, "sources", "boot.wim"), "rb") as f:
+        assert f.read() == (src / "sources" / "boot.wim").read_bytes()  # left alone
+
+
+@needs("genisoimage", "wimlib-imagex", "mkfs.ntfs", "ntfs-3g", "mkfs.fat")
+def test_iso_windows_ntfs_answer_file_in_boot_wim(loop, tmp_path, fuse_mount, monkeypatch):
+    iso, src = make_windows_iso(tmp_path, wim_mib=6)
+    wrapper_path, wrapper = fake_setup_wrapper(tmp_path, monkeypatch)
+    lp = loop(128 * MiB)
+    job = {"mode": "iso", "device": lp.spec(), "image": str(iso), "filesystem": "ntfs",
+           "scheme": "gpt", "label": "WIN11", "verify": True, "uefi_ntfs": fake_uefi_ntfs(tmp_path),
+           "iso": {"iso_label": "CCCOMA_X64FRE_EN-US_DV9", "unattend": UNATTEND,
+                   "unattend_target": "bootwim", "boot_wim": "sources/boot.wim",
+                   "bypass_appraiser": True, "setup_wrapper": wrapper_path}}
+    ok, msg, events = run_job(job)
+    assert ok, msg + "\n" + logs(events)
+    assert "Verification successful" in logs(events)
+    assert_upgrade_ready(fuse_mount(lp.part(1), "ntfs"), src, wrapper)
+
+
+@needs("genisoimage", "mkfs.fat")
+def test_rejects_bad_windows_options_before_writing(loop, tmp_path):
+    iso, _ = make_windows_iso(tmp_path, wim_mib=3)
+    lp = loop(64 * MiB)
+    bogus = tmp_path / "setup_x64.exe"
+    bogus.write_bytes(b"MZ" + os.urandom(3000))
+    base = {"mode": "iso", "device": lp.spec(), "image": str(iso), "filesystem": "fat32",
+            "scheme": "gpt", "label": "WIN11"}
+    for iso_opts, error in (
+            ({"unattend": UNATTEND, "unattend_target": "root"}, "unattend_target"),
+            ({"unattend": UNATTEND, "unattend_target": "bootwim", "boot_wim": "sources/nope.wim"},
+             "not found in the image"),
+            ({"setup_wrapper": str(bogus)}, "checksum mismatch")):
+        if iso_opts.get("unattend_target") == "bootwim" and not have("wimlib-imagex"):
+            continue
+        ok, msg, _ = run_job({**base, "iso": {"iso_label": "X", **iso_opts}})
+        assert not ok and error in msg
+    with open(lp.backing, "rb") as f:
+        assert f.read(MiB) == bytes(MiB)  # the drive was not touched
 
 
 @needs("genisoimage", "grub-install", "mkfs.fat")

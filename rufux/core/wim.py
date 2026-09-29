@@ -72,6 +72,13 @@ class WimInfo:
                                     self.images[0].major if self.images else 0,
                                     self.images[0].minor if self.images else 0)
 
+    @property
+    def setup_index(self) -> int:
+        """For boot.wim: the image the PC boots, normally 2 ("Microsoft Windows Setup")."""
+        if 1 <= self.boot_index <= self.image_count:
+            return self.boot_index
+        return 2 if self.image_count >= 2 else 1
+
 
 def windows_product_name(build: int, server: bool, major: int = 10, minor: int = 0) -> str:
     if server:
