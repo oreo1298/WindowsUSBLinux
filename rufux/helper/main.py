@@ -44,6 +44,35 @@ def _user_ids() -> tuple[int | None, int | None]:
         return u, u
 
 
+class _StdinLines:
+    """Reads lines from file descriptor 0 without going through sys.stdin.
+
+    The GUI keeps our stdin open (to send "cancel"), so a thread is blocked reading it when
+    the job ends.  With sys.stdin that thread holds the stream's lock, and Python aborts at
+    exit ("could not acquire lock for <_io.BufferedReader name='<stdin>'> at interpreter
+    shutdown").  A plain os.read() holds no lock.
+    """
+
+    def __init__(self, fd: int = 0):
+        self.fd = fd
+        self.buf = b""
+
+    def readline(self, limit: int) -> bytes:
+        """Like BufferedReader.readline(limit): at most `limit` bytes, b"" at the end of input."""
+        while b"\n" not in self.buf[:limit] and len(self.buf) < limit:
+            try:
+                chunk = os.read(self.fd, 65536)
+            except OSError:
+                chunk = b""
+            if not chunk:
+                break
+            self.buf += chunk
+        end = self.buf.find(b"\n", 0, limit)
+        cut = end + 1 if end >= 0 else min(len(self.buf), limit)
+        line, self.buf = self.buf[:cut], self.buf[cut:]
+        return line
+
+
 def _allow_loop() -> bool:
     # Only honoured when root runs the helper directly (pkexec clears the environment).
     return os.environ.get("RUFUX_ALLOW_LOOP") == "1"
@@ -262,7 +291,8 @@ def main(argv: list[str] | None = None) -> int:
     ctx = Context(emitter, user_uid=uid, user_gid=gid)
     emitter.emit(t="hello", version=__version__, protocol=HELPER_PROTOCOL)
 
-    raw = sys.stdin.buffer.readline(MAX_JOB)
+    stdin = _StdinLines()
+    raw = stdin.readline(MAX_JOB)
     try:
         job = json.loads(raw.decode("utf-8"))
         if not isinstance(job, dict):
@@ -272,7 +302,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     def watch_stdin() -> None:
-        for line in sys.stdin.buffer:
+        while True:
+            line = stdin.readline(4096)
+            if not line:
+                return
             if line.strip() == b"cancel":
                 ctx.log("Cancellation requested")
                 ctx.cancel()

@@ -101,6 +101,8 @@ class HelperClient(QObject):
                                str(ev.get("msg", "")))
         elif t == "done":
             self._done = True
+            if self.proc is not None:
+                self.proc.closeWriteChannel()  # nothing left to cancel: let the helper see EOF
             self.finished.emit(bool(ev.get("ok")), bool(ev.get("cancelled")), str(ev.get("msg", "")))
 
     def _on_stderr(self) -> None:

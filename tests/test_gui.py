@@ -215,3 +215,24 @@ def test_start_detects_newly_installed_tools(window, monkeypatch):
     monkeypatch.setattr(main_window.QMessageBox, "critical", staticmethod(lambda *a, **k: errors.append(a)))
     w.on_start()  # no image selected: stops with an error, after detecting the tools
     assert w.tools is fresh and errors
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="the helper is started through pkexec when not root")
+def test_helper_client_closes_stdin_when_done(app, tmp_path, monkeypatch):
+    from rufux.ui.helper_client import HelperClient
+
+    fake = tmp_path / "fake-helper"
+    fake.write_text(
+        "import json, os\n"
+        "print(json.dumps({'t': 'hello', 'version': 'test', 'protocol': 2}), flush=True)\n"
+        "os.read(0, 65536)  # the job\n"
+        "print(json.dumps({'t': 'done', 'ok': True, 'msg': 'fine'}), flush=True)\n"
+        "while os.read(0, 4096):  # only exits once the GUI closes our stdin\n"
+        "    pass\n")
+    monkeypatch.setenv("RUFUX_HELPER", str(fake))
+    client = HelperClient()
+    results = []
+    client.finished.connect(lambda ok, cancelled, msg: results.append((ok, msg)))
+    client.start({"action": "write"})
+    wait(app, lambda: results and not client.running, timeout=15)
+    assert results == [(True, "fine")]

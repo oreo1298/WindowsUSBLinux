@@ -20,6 +20,11 @@
     <binary>rufux</binary>
   </provides>
   <releases>
+    <release version="1.1.1" date="2026-09-30">
+      <description>
+        <p>Fix a crash of the helper as it exited after a successful job, which added "Fatal Python error" lines to the end of the log.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-09-29">
       <description>
         <p>Windows drives can now be used for in-place upgrades: the Windows setup options are stored inside boot.wim, as Rufus does, and Windows 11 24H2+ drives with the requirement bypass get Rufus' setup.exe wrapper.</p>

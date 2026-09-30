@@ -12,7 +12,7 @@
 # the package that was built last time).
 
 pkgname=rufux
-pkgver=1.1.0
+pkgver=1.1.1
 pkgrel=1
 _rufusver=v4.15
 pkgdesc="Rufus-style bootable USB creator for Linux (Windows 10/11 and Linux images)"

@@ -266,16 +266,45 @@ def test_helper_cancel(loop, tmp_path):
            "image": str(img), "verify": True, "badblocks": 4}
     env = dict(os.environ, RUFUX_ALLOW_LOOP="1")
     proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "rufux-helper")],
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     proc.stdin.write(json.dumps(job).encode() + b"\n")
     proc.stdin.flush()
     time.sleep(1.0)
     proc.stdin.write(b"cancel\n")
     proc.stdin.flush()
-    out, _ = proc.communicate(timeout=120)
+    out, err = proc.communicate(timeout=120)
     events = [json.loads(line) for line in out.decode().splitlines()]
     assert events[-1]["t"] == "done" and events[-1]["cancelled"]
-    assert proc.returncode == 3
+    assert proc.returncode == 3 and not err, err.decode()
+
+
+def test_helper_exits_cleanly_with_stdin_open(loop, tmp_path):
+    # The GUI keeps the helper's stdin open for "cancel". The thread waiting on it used to
+    # make Python abort at exit ("Fatal Python error: ... could not acquire lock for
+    # <_io.BufferedReader name='<stdin>'>"), which showed up at the end of the log.
+    lp = loop(32 * MiB)
+    img = tmp_path / "disk.img"
+    img.write_bytes(os.urandom(2 * MiB))
+    job = {"protocol": HELPER_PROTOCOL, "action": "write", "mode": "dd", "device": lp.spec(),
+           "image": str(img), "verify": True}
+    env = dict(os.environ, RUFUX_ALLOW_LOOP="1")
+    proc = subprocess.Popen([sys.executable, "-I", os.path.join(ROOT, "bin", "rufux-helper")],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    try:
+        proc.stdin.write(json.dumps(job).encode() + b"\n")
+        proc.stdin.flush()  # and leave stdin open, as QProcess does
+        events = []
+        for line in proc.stdout:
+            events.append(json.loads(line))
+            if events[-1]["t"] == "done":
+                break
+        assert events[-1]["t"] == "done" and events[-1]["ok"], events[-1]
+        assert proc.wait(timeout=30) == 0
+        assert proc.stderr.read() == b""
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.stdin.close()
 
 
 # ---------------------------------------------------------------------------
